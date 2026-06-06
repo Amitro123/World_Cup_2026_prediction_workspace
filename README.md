@@ -35,14 +35,14 @@ WorldCup2026/
 
 ## התקנה / Install
 
-```powershell
-cd C:\Users\Dana\WorldCup2026
+```bash
+cd WorldCup2026
 pip install -r requirements.txt
 ```
 
 ## הרצה / Run the dashboard
 
-```powershell
+```bash
 streamlit run app.py
 ```
 
@@ -80,7 +80,7 @@ state = ds.update_match_state("I1", minute=80, home_goals=2, away_goals=1)
 
 הממשק הוא CLI שמחזיר JSON (`hermes.py`), כך ש-Hermes יכול פשוט להריץ פקודה:
 
-```powershell
+```bash
 # ברזיל מאבדת שחקן מפתח לפני משחק C1 — הורדת 60 נק' פיפ"א מברזיל:
 python hermes.py update --match C1 --team BRA --kind rating_delta --value -60 `
     --note "ברזיל מאבדת שחקן מפתח - פגיעה בהתקפה" --source "espn.com"
@@ -115,7 +115,7 @@ python hermes.py rate --team ARG --delta -120   # או שינוי יחסי
 
 ערוך את קבצי ה-CSV ב-`data/` (שמור על הכותרות), ואז הרץ:
 
-```powershell
+```bash
 python build_data.py     # נקודות פיפ"א + power_rating + expert_scores.csv + odds.csv + תחזיות
 python build_excel.py    # מרענן את תבנית האקסל
 ```
