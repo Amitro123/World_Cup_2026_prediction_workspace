@@ -49,6 +49,13 @@ EXPERT_W = 0.55      # weight on the model vs an expert scoreline target
 MIN_LAMBDA = 0.18    # floor on any expected-goals value
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
+# Knockout draws go to extra time + penalties. The stronger team keeps a real but
+# LIMITED edge there: shootouts in particular are close to a coin flip regardless
+# of the skill gap. We therefore resolve a knockout draw proportionally to win
+# strength but cap the favourite's advance probability at SHOOTOUT_CAP (so even a
+# huge favourite is at most ~58% to survive ET/pens, not 80%+).
+SHOOTOUT_CAP = 0.58
+
 # --- Head-to-head (past meetings) signal ------------------------------------
 # FIFA points already capture most of a team's strength, so H2H is a small,
 # bounded nudge: a team that has historically beaten this specific opponent gets
@@ -487,4 +494,7 @@ def knockout_winner(
         rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
     )
     ph, pa = probs["p_home"], probs["p_away"]
-    return 0 if rng.random() < ph / (ph + pa) else 1
+    frac = ph / (ph + pa) if (ph + pa) > 0 else 0.5
+    # Cap the favourite's ET/penalties edge — a shootout is near a coin flip.
+    frac = max(1.0 - SHOOTOUT_CAP, min(SHOOTOUT_CAP, frac))
+    return 0 if rng.random() < frac else 1

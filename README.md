@@ -285,6 +285,18 @@ Both return a dict with `p_home`, `p_draw`, `p_away`, and the underlying
 `teams.csv` (or the JSON) and rerun. It **does not overwrite** existing rows in
 `my_predictions.csv` — it only fills missing ones.
 
+**Validation.** A typo in a `team_id` (or a dangling `match_id`) otherwise fails
+silently and skews predictions. `DataStore.validate()` cross-checks every id
+against `teams.csv`/`matches.csv` and returns a list of issues (`[]` when clean):
+
+```python
+from src.models import DataStore
+issues = DataStore.load("data").validate()
+```
+
+The dashboard runs this on every load and shows **✓ נתונים תקינים** or a warning
+list in the sidebar, so a bad edit is obvious immediately.
+
 ---
 
 ## Excel Template
@@ -440,8 +452,10 @@ retry with backoff; no proxy configuration is required.
    bipartite matching (no same-group rematch). The R16/QF/SF tree is wired by
    explicit match dependencies.
 4. **Knockout games** — neutral venue; draws resolve (ET/penalties) by relative
-   strength. H2H and form supremacy are precomputed once per run and applied
-   throughout.
+   strength, but the favourite's advance probability is **capped at
+   `SHOOTOUT_CAP = 0.58`** — a shootout is close to a coin flip regardless of the
+   skill gap, so even a huge favourite is at most ~58% to survive, not 80%+.
+   H2H and form supremacy are precomputed once per run and applied throughout.
 
 ```python
 from src.models import DataStore
@@ -580,6 +594,7 @@ Lightweight self-checking scripts live in `tests/` and can be run directly:
 python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
+python tests/test_integrity.py # shootout cap + schema validation
 ```
 
 Each prints PASS/FAIL per check and asserts on failure (also runnable under

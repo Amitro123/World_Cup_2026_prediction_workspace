@@ -90,6 +90,63 @@ class DataStore:
             model=model or engine.ProbabilityModel(),
         )
 
+    def validate(self) -> list[str]:
+        """Sanity-check the loaded data and return a list of human-readable issues.
+
+        Catches the silent failure modes a typo introduces: a team_id in
+        matches/h2h/form/predictions that does not exist in teams.csv, or a
+        missing required column. Returns [] when everything lines up. Cheap to
+        run on load; surfaced in the dashboard sidebar so a bad edit is obvious
+        instead of quietly skewing predictions.
+        """
+        issues: list[str] = []
+
+        required = {
+            "teams": ["team_id", "name_he", "fifa_points"],
+            "matches": ["match_id", "home_id", "away_id"],
+        }
+        for name, cols in required.items():
+            df = getattr(self, "predictions" if name == "my_predictions" else name)
+            missing = [c for c in cols if c not in df.columns]
+            if missing:
+                issues.append(f"{name}.csv חסר עמודות: {', '.join(missing)}")
+
+        if "team_id" not in self.teams.columns:
+            return issues  # cannot cross-check ids without the master list
+        known = set(self.teams["team_id"].astype(str))
+
+        def _check_ids(df, cols, label):
+            if df is None or df.empty:
+                return
+            for col in cols:
+                if col not in df.columns:
+                    continue
+                bad = sorted(set(df[col].astype(str)) - known - {"nan", ""})
+                if bad:
+                    issues.append(f"{label}: team_id לא מוכר ({', '.join(bad[:8])})")
+
+        _check_ids(self.matches, ["home_id", "away_id"], "matches.csv")
+        _check_ids(self.h2h, ["team_a", "team_b"], "h2h.csv")
+        _check_ids(self.form, ["team_id"], "form.csv")
+        _check_ids(self.players, ["team_id"], "players.csv")
+
+        # cross-file match_id references
+        if "match_id" in self.matches.columns:
+            match_ids = set(self.matches["match_id"].astype(str))
+            for df, label in [(self.predictions, "my_predictions.csv"),
+                              (self.expert, "expert_scores.csv")]:
+                if df is not None and not df.empty and "match_id" in df.columns:
+                    bad = sorted(set(df["match_id"].astype(str)) - match_ids - {"nan", ""})
+                    if bad:
+                        issues.append(f"{label}: match_id לא מוכר ({', '.join(bad[:8])})")
+
+        # duplicate team ids
+        if self.teams["team_id"].duplicated().any():
+            dups = sorted(self.teams.loc[self.teams["team_id"].duplicated(), "team_id"].astype(str))
+            issues.append(f"teams.csv: team_id כפול ({', '.join(dups[:8])})")
+
+        return issues
+
     def save_matches(self) -> None:
         self.matches.to_csv(os.path.join(self.data_dir, DATA_FILES["matches"]), index=False)
 

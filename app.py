@@ -97,6 +97,13 @@ if st.sidebar.button("🔄 רענן נתונים", use_container_width=True,
     else:
         st.sidebar.error(f"רענון נכשל: {msg}")
 
+# Data integrity indicator — flags typos (unknown team_id, bad references).
+_issues = ds.validate()
+if _issues:
+    st.sidebar.warning("⚠️ בעיות בנתונים:\n\n" + "\n".join(f"- {i}" for i in _issues))
+else:
+    st.sidebar.caption("✓ נתונים תקינים")
+
 
 # --- view: fixtures ----------------------------------------------------------
 if view == "משחקים":
