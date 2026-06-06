@@ -10,7 +10,7 @@ import random
 import pandas as pd
 import streamlit as st
 
-from src import engine, knockout
+from src import bonus, engine, knockout
 from src.models import DataStore
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -55,7 +55,8 @@ def team(tid: str) -> str:
 st.sidebar.title("מונדיאל 2026 ⚽")
 view = st.sidebar.radio(
     "תצוגה",
-    ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט", "בראקט מסומלץ"],
+    ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט",
+     "בראקט מסומלץ", "שאלות בונוס"],
 )
 st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
 
@@ -336,3 +337,65 @@ elif view == "בראקט מסומלץ":
                 for t in rnd["ties"]
             ]
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+# --- view: bonus questions --------------------------------------------------
+elif view == "שאלות בונוס":
+    st.header("שאלות בונוס — תשובות מהמודל")
+    st.caption(
+        "כל התשובות מחושבות מאותו מנוע + סימולציית נוקאאוט, ולכן מתעדכנות ככל "
+        "ש-Hermes כותב תוצאות אמת ל-matches.csv. שתי שאלות (מלך בישולים, "
+        "אמבפה/ויניסיוס) הן ברמת השחקן — מסומנות כהערכה ⚠️."
+    )
+    c1, c2 = st.columns(2)
+    n_ko = c1.slider("סימולציות נוקאאוט", 1000, 10000, 4000, step=1000)
+    seed = c2.number_input("seed (לשחזור)", 0, 9999, 2026)
+
+    if st.button("חשב תשובות בונוס"):
+        with st.spinner("מחשב..."):
+            st.session_state["bonus"] = bonus.compute(
+                ds, n_ko=int(n_ko), n_group=int(n_ko), seed=int(seed)
+            )
+
+    if "bonus" in st.session_state:
+        b = st.session_state["bonus"]
+
+        def flag(d):
+            return " ⚠️ (הערכה ברמת שחקן)" if d.get("player_level") else ""
+
+        st.subheader("📋 תשובות מומלצות")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"שאלה": "סגנית האלופה", "תשובה": b["runner_up"]["answer"]},
+                    {"שאלה": "מלך הבישולים" + flag(b["top_assists"]), "תשובה": b["top_assists"]["answer"]},
+                    {"שאלה": "שער ראשון בטורניר", "תשובה": b["first_goal"]["answer"]},
+                    {"שאלה": "שק החבטות (הכי הרבה ספיגות)", "תשובה": b["punching_bag"]["answer"]},
+                    {"שאלה": "הכי הרבה שערים בשלב הבתים", "תשובה": b["most_group_goals"]["answer"]},
+                    {"שאלה": "מסי vs רונאלדו (מי רחוק יותר)", "תשובה": b["messi_vs_ronaldo"]["answer"]},
+                    {"שאלה": "אמבפה vs ויניסיוס (מי כובש יותר)" + flag(b["mbappe_vs_vinicius"]), "תשובה": b["mbappe_vs_vinicius"]["answer"]},
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.divider()
+        st.markdown(f"**סגנית האלופה: {b['runner_up']['answer']}** — {b['runner_up']['note']}")
+        st.dataframe(pd.DataFrame(b["runner_up"]["table"]), use_container_width=True, hide_index=True)
+
+        st.markdown(f"**שער ראשון: {b['first_goal']['answer']}** — {b['first_goal']['note']}")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"**שק החבטות: {b['punching_bag']['answer']}**")
+            st.dataframe(pd.DataFrame(b["punching_bag"]["table"]), use_container_width=True, hide_index=True)
+        with col_b:
+            st.markdown(f"**הכי הרבה שערים: {b['most_group_goals']['answer']}**")
+            st.dataframe(pd.DataFrame(b["most_group_goals"]["table"]), use_container_width=True, hide_index=True)
+
+        st.markdown(f"**מסי vs רונאלדו → {b['messi_vs_ronaldo']['answer']}**")
+        st.dataframe(pd.DataFrame(b["messi_vs_ronaldo"]["table"]), use_container_width=True, hide_index=True)
+
+        st.markdown(f"**מלך הבישולים: {b['top_assists']['answer']}** ⚠️ — {b['top_assists']['note']}")
+        st.markdown(f"**אמבפה vs ויניסיוס → {b['mbappe_vs_vinicius']['answer']}** ⚠️ — {b['mbappe_vs_vinicius']['note']}")

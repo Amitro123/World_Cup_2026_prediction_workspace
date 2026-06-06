@@ -1,0 +1,164 @@
+"""
+שאלות בונוס — derive answers to the tournament bonus questions from the model.
+
+All answers are recomputed from the same engine + knockout simulation, so they
+stay consistent with real results as Hermes/your live agent writes them back into
+matches.csv (finished games are locked; the rest is sampled).
+
+Team-level questions are full model output. Two questions are *player-level*
+(top assists; Mbappé vs Vinícius goal count) — the model is team-level, so those
+are returned as informed proxies and flagged with `player_level=True`.
+"""
+
+from __future__ import annotations
+
+import random
+from collections import defaultdict
+
+from . import engine, knockout
+
+# Player -> team, for the head-to-head questions.
+PLAYER_TEAM = {
+    "מסי": "ARG",
+    "רונאלדו": "POR",
+    "אמבפה": "FRA",
+    "ויניסיוס": "BRA",
+}
+
+# Tournament opener (known schedule): Mexico vs South Africa at Estadio Azteca.
+OPENER_TEAMS = ("MEX", "RSA")
+
+
+def _group_goal_sim(ds, n: int, rng) -> tuple[dict, dict, dict]:
+    """Monte-Carlo the 72 group games -> expected goals for/against per team."""
+    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
+    gf = defaultdict(float)
+    ga = defaultdict(float)
+    games = ds.matches
+    for _ in range(n):
+        for _, m in games.iterrows():
+            h, a = m.home_id, m.away_id
+            if str(m.status) == "finished" and _notna(m.home_goals):
+                hg, ag = int(m.home_goals), int(m.away_goals)
+            else:
+                hg, ag = engine.sample_score(
+                    ratings[h], ratings[a], rng, expert=ds.expert_for(m.match_id)
+                )
+            gf[h] += hg; ga[h] += ag
+            gf[a] += ag; ga[a] += hg
+    gf = {t: v / n for t, v in gf.items()}
+    ga = {t: v / n for t, v in ga.items()}
+    return gf, ga, ratings
+
+
+def _notna(x) -> bool:
+    return x == x and x is not None  # NaN != NaN
+
+
+def _find_opener(ds):
+    pair = frozenset(OPENER_TEAMS)
+    for _, m in ds.matches.iterrows():
+        if frozenset((m.home_id, m.away_id)) == pair:
+            return m
+    return ds.matches.iloc[0]
+
+
+def _expected_ko_games(row) -> float:
+    """Expected knockout games a team plays = sum of P(reach each KO round)."""
+    return (
+        row["qualify_%"] + row["r16_%"] + row["qf_%"] + row["sf_%"] + row["final_%"]
+    ) / 100.0
+
+
+def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict:
+    """Return a structured dict of bonus-question answers."""
+    name = lambda t: ds.team_name(t, "he")
+    df = knockout.run(ds, n=n_ko, seed=seed).set_index("team_id")
+    rng = random.Random(seed)
+    gf, ga, ratings = _group_goal_sim(ds, n_group, rng)
+
+    # --- 1) runner-up: reached the final but did not win it ---
+    runnerup = (df["final_%"] - df["title_%"]).sort_values(ascending=False)
+    champion = df["title_%"].idxmax()
+    # most likely runner-up that is NOT your champion pick
+    runnerup_pick = next(t for t in runnerup.index if t != champion)
+    top_finalists = [
+        {"team": name(t), "final_%": round(df.loc[t, "final_%"], 1),
+         "title_%": round(df.loc[t, "title_%"], 1),
+         "runnerup_%": round(runnerup[t], 1)}
+        for t in runnerup.head(6).index
+    ]
+
+    # --- 3) first goal of the tournament (opener favourite by expected goals) ---
+    opener = _find_opener(ds)
+    lam_h, lam_a = engine.expected_goals(
+        ratings[opener.home_id], ratings[opener.away_id],
+        expert=ds.expert_for(opener.match_id),
+    )
+    opener_fav = opener.home_id if lam_h >= lam_a else opener.away_id
+
+    # --- 4) punching bag / 5) most group-stage goals ---
+    most_conceded = sorted(ga.items(), key=lambda x: -x[1])[:5]
+    most_scored = sorted(gf.items(), key=lambda x: -x[1])[:5]
+
+    # --- 6) Messi vs Ronaldo: who goes further ---
+    def depth(tid):
+        r = df.loc[tid]
+        return (r["qualify_%"] + r["r16_%"] + r["qf_%"] + r["sf_%"]
+                + r["final_%"] + r["title_%"])
+    arg, por = PLAYER_TEAM["מסי"], PLAYER_TEAM["רונאלדו"]
+    further = "מסי" if depth(arg) >= depth(por) else "רונאלדו"
+
+    # --- 7) Mbappé vs Vinícius: who scores more (proxy) ---
+    fra, bra = PLAYER_TEAM["אמבפה"], PLAYER_TEAM["ויניסיוס"]
+    # expected total goals proxy = team scoring rate/game * expected total games
+    def exp_team_goals(tid):
+        rate = gf[tid] / 3.0  # per-game scoring rate from group stage
+        games = 3.0 + _expected_ko_games(df.loc[tid])
+        return rate * games
+    fra_g, bra_g = exp_team_goals(fra), exp_team_goals(bra)
+    more_goals = "אמבפה" if fra_g >= bra_g else "ויניסיוס"
+
+    def stage_row(tid):
+        r = df.loc[tid]
+        return {
+            "team": name(tid),
+            "qf_%": round(r["qf_%"], 1), "sf_%": round(r["sf_%"], 1),
+            "final_%": round(r["final_%"], 1), "title_%": round(r["title_%"], 1),
+        }
+
+    return {
+        "runner_up": {
+            "answer": name(runnerup_pick),
+            "note": f"בהנחה ש{name(champion)} אלופה; הסגנית הסבירה הבאה.",
+            "table": top_finalists,
+        },
+        "top_assists": {
+            "answer": "למין ימאל (ספרד)",
+            "player_level": True,
+            "note": "שאלת שחקן — לא יוצא מהמודל; בורר מרכזי בנבחרת שצולחת עמוק.",
+        },
+        "first_goal": {
+            "answer": name(opener_fav),
+            "note": f"משחק פתיחה: {name(opener.home_id)} נגד {name(opener.away_id)}; "
+                    f"תוחלת שערים {lam_h:.2f}-{lam_a:.2f}.",
+        },
+        "punching_bag": {
+            "answer": name(most_conceded[0][0]),
+            "table": [{"team": name(t), "goals_against": round(v, 2)} for t, v in most_conceded],
+        },
+        "most_group_goals": {
+            "answer": name(most_scored[0][0]),
+            "table": [{"team": name(t), "goals_for": round(v, 2)} for t, v in most_scored],
+        },
+        "messi_vs_ronaldo": {
+            "answer": further,
+            "table": [stage_row(arg), stage_row(por)],
+        },
+        "mbappe_vs_vinicius": {
+            "answer": more_goals,
+            "player_level": True,
+            "note": f"פרוקסי לפי עומק בטורניר: צרפת ~{fra_g:.1f} שערים צפויים, "
+                    f"ברזיל ~{bra_g:.1f} (אמבפה/ויניסיוס הכובשים המרכזיים).",
+        },
+    }
