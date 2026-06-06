@@ -282,22 +282,45 @@ def _merge_write(new_rows: list[dict]) -> int:
 
 
 def run(pairs, cutoff: int, write: bool, polite: float = 0.6) -> dict:
+    # Prefer the structured API-Football source when a key is configured; fall
+    # back to the DuckDuckGo scrape per-pair when it is missing or returns nothing.
+    from src import datameta
+    from src.providers import RateLimitError, provider_from_env
+    provider = provider_from_env(DATA)
+    source = "api-football" if provider else "duckduckgo"
+
     results, all_rows = [], []
     for h, a in pairs:
-        res = fetch_pair(h, a, cutoff)
-        results.append(res)
-        all_rows.extend(res["rows"])
-        time.sleep(polite)  # be a good citizen
+        rows, ok = [], False
+        if provider:
+            try:
+                rows = provider.head_to_head(
+                    h, a, TEAM_NAME.get(h, h), TEAM_NAME.get(a, a), cutoff=cutoff
+                )
+                ok = bool(rows)
+            except RateLimitError as e:
+                results.append({"pair": [h, a], "ok": False, "error": str(e)})
+                break
+            except Exception:
+                rows, ok = [], False
+        if not rows:  # API miss -> scrape fallback
+            res = fetch_pair(h, a, cutoff)
+            rows, ok = res["rows"], res["ok"]
+            time.sleep(polite)
+        results.append({"pair": [h, a], "ok": ok, "rows": rows})
+        all_rows.extend(rows)
     out = {
+        "source": source,
         "cutoff": cutoff,
         "pairs_checked": len(pairs),
-        "pairs_fetched_ok": sum(1 for r in results if r["ok"]),
+        "pairs_fetched_ok": sum(1 for r in results if r.get("ok")),
         "rows_found": len(all_rows),
         "rows": all_rows,
     }
     if write:
         out["rows_added"] = _merge_write(all_rows)
         out["written_to"] = H2H_CSV
+        datameta.stamp(DATA, "h2h", source, out["rows_added"])
     return out
 
 

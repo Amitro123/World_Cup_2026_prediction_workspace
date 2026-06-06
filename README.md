@@ -60,12 +60,14 @@ WorldCup2026/
 ├── src/
 │   ├── engine.py             # the probability model (Dixon-Coles on FIFA points)
 │   ├── models.py             # DataStore: data layer + update_match_state + Hermes API
+│   ├── providers.py          # API-Football adapter for form/h2h ingestion
+│   ├── datameta.py           # freshness ledger (data/.data_meta.json)
 │   └── knockout.py           # Monte-Carlo simulation of the whole tournament
 ├── app.py                    # Streamlit dashboard (Hebrew / RTL)
 ├── hermes.py                 # CLI bridge for the Hermes agent (news + briefing)
 ├── scout.py                  # injury / suspension news scout (pre-match)
-├── fetch_h2h.py              # refreshes h2h.csv from a live web search
-├── fetch_form.py             # refreshes form.csv from a live web search
+├── fetch_h2h.py              # refreshes h2h.csv (API-Football, scrape fallback)
+├── fetch_form.py             # refreshes form.csv (API-Football, scrape fallback)
 ├── build_data.py             # builds fifa_points, expert_scores.csv, odds.csv, predictions
 ├── build_excel.py            # builds the Excel template
 └── requirements.txt
@@ -421,9 +423,36 @@ Streamlit and the engine pick up the change on the next run/refresh.
 
 ## Automated Data Refresh (`fetch_h2h.py`, `fetch_form.py`)
 
-Two scrapers (modeled on `scout.py`) refresh the H2H and form signals from a live
-open web search (DuckDuckGo lite). Both follow a **recommend-don't-apply**
-philosophy: they print proposed rows and only write when you pass `--write`.
+`fetch_h2h.py` / `fetch_form.py` refresh the H2H and form signals. Both follow a
+**recommend-don't-apply** philosophy: they print proposed rows and only write
+when you pass `--write`.
+
+### Data source: API-Football (recommended) with scrape fallback
+
+The reliable source is **API-Football** (api-sports.io) — structured fixtures
+with clean dates, scores and competition labels, so a single backfill fills all
+48 teams instead of the handful the HTML scrape managed.
+
+```bash
+# 1. Free account (no card): https://www.api-football.com/
+# 2. cp .env.example .env  &&  paste your key into API_FOOTBALL_KEY
+# 3. run the fetchers exactly as before — they auto-detect the key:
+python fetch_form.py --write        # 48 teams via the API
+python fetch_h2h.py --write         # 72 group pairs via the API
+```
+
+- **Free plan = 100 requests/day** (resets 00:00 UTC). A full backfill is ~48
+  form + 72 h2h calls plus one-time id lookups, so run **form one day, h2h the
+  next** (or spread them). The adapter reads the remaining-quota header and stops
+  with a clear `RateLimitError` rather than silently truncating.
+- FIFA codes are mapped to API-Football's numeric ids once and cached in
+  `data/team_id_map.json` (gitignored-friendly; safe to commit if you like).
+- **No key? It still works** — `src/providers.provider_from_env` returns `None`
+  and both scripts fall back to the original DuckDuckGo scrape per item.
+- Every `--write` stamps `data/.data_meta.json`, surfaced in the sidebar's
+  **📊 כיסוי נתונים** panel as "form: עודכן 2026-06-05 (api-football)".
+
+### CLI
 
 **`fetch_h2h.py`** — recent meetings *between* two teams; classifies
 friendly/competitive, recency-filters, merges into `h2h.csv`:
@@ -444,11 +473,11 @@ python fetch_form.py --write        # fetch + merge into form.csv
 python hermes.py form --team MEX --write      # same, via Hermes
 ```
 
-**Rate limiting:** DuckDuckGo throttles bursts, so a full sweep of all pairs/teams
-may be partially blocked (expected — the script reports how many loaded and skips
-blocked ones gracefully). **Recommended usage is per-pair / per-team** (a single
-request) right before a fixture. Both scripts use a real browser User-Agent and
-retry with backoff; no proxy configuration is required.
+**Rate limiting:** with API-Football, mind the 100/day free budget (see above).
+On the **scrape fallback**, DuckDuckGo throttles bursts, so a full sweep may be
+partially blocked (expected — the script reports how many loaded and skips
+blocked ones gracefully); there, **per-pair / per-team** usage is recommended.
+Both paths report `source` in their JSON output so you know which was used.
 
 ---
 
@@ -627,6 +656,7 @@ python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
 python tests/test_integrity.py # shootout cap + schema validation + data coverage
+python tests/test_providers.py # API-Football adapter (mocked, no network)
 python tests/test_elo.py       # FIFA/Elo blend + production gate
 python tests/test_hosts.py     # host-only home advantage (USA/MEX/CAN)
 ```

@@ -6,3 +6,6 @@ WorldCup2026_Template.xlsx
 .venv/
 venv/
 .DS_Store
+
+# Secrets — API keys live here, never committed
+.env

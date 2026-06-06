@@ -111,13 +111,19 @@ if hasattr(ds, "validate"):
 # Missing data is a neutral zero (never corrupts a prediction), so this is an
 # honest "where would real data add signal?" gauge, not an error.
 if hasattr(ds, "coverage"):
+    from src import datameta
     _cov = ds.coverage()
+    _meta = datameta.read(ds.data_dir)
     _labels = {"form": "כושר עדכני", "h2h": "מפגשים היסטוריים", "players": "שחקנים"}
     _lines = []
     for _k in ("form", "h2h", "players"):
         _c = _cov[_k]
         _mark = "✓" if _c["have"] == _c["total"] else "•"
-        _lines.append(f"{_mark} {_labels[_k]}: {_c['have']}/{_c['total']}")
+        _line = f"{_mark} {_labels[_k]}: {_c['have']}/{_c['total']}"
+        _stamp = _meta.get(_k)
+        if _stamp and _stamp.get("updated"):
+            _line += f" — עודכן {_stamp['updated']} ({_stamp.get('source', '?')})"
+        _lines.append(_line)
     with st.sidebar.expander("📊 כיסוי נתונים", expanded=False):
         st.caption("\n\n".join(_lines))
         st.caption(

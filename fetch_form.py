@@ -187,23 +187,56 @@ def _merge_write(new_rows: list[dict]) -> int:
     return added
 
 
+def _provider_form(provider, team_id: str, cutoff: int) -> list[dict]:
+    """Fetch one team's form via the structured API, recency-filtered to cutoff."""
+    rows = provider.recent_form(team_id, TEAM_NAME.get(team_id, team_id),
+                                last=MAX_PER_TEAM)
+    out = []
+    for r in rows:
+        y = str(r.get("date", ""))[:4]
+        if y.isdigit() and int(y) >= cutoff:
+            out.append(r)
+    return out
+
+
 def run(team_ids, cutoff: int, write: bool, polite: float = 0.6) -> dict:
+    # Prefer the structured API-Football source when a key is configured; fall
+    # back to the DuckDuckGo scrape per-team when it is missing or returns nothing.
+    from src import datameta
+    from src.providers import RateLimitError, provider_from_env
+    provider = provider_from_env(DATA)
+    source = "api-football" if provider else "duckduckgo"
+
     results, all_rows = [], []
     for t in team_ids:
-        res = fetch_team(t, cutoff)
-        results.append(res)
-        all_rows.extend(res["rows"])
-        time.sleep(polite)
+        rows, ok = [], False
+        if provider:
+            try:
+                rows = _provider_form(provider, t, cutoff)
+                ok = bool(rows)
+            except RateLimitError as e:
+                results.append({"team": t, "ok": False, "error": str(e)})
+                break
+            except Exception:
+                rows, ok = [], False
+        if not rows:  # API miss -> scrape fallback
+            res = fetch_team(t, cutoff)
+            rows, ok = res["rows"], res["ok"]
+            time.sleep(polite)
+        results.append({"team": t, "ok": ok, "rows": rows})
+        all_rows.extend(rows)
     out = {
+        "source": source,
         "cutoff": cutoff,
         "teams_checked": len(team_ids),
-        "teams_fetched_ok": sum(1 for r in results if r["ok"]),
+        "teams_fetched_ok": sum(1 for r in results if r.get("ok")),
         "rows_found": len(all_rows),
         "rows": all_rows,
     }
     if write:
         out["rows_added"] = _merge_write(all_rows)
         out["written_to"] = FORM_CSV
+        datameta.stamp(DATA, "form", source, out["rows_added"])
     return out
 
 
