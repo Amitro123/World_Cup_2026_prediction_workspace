@@ -1,259 +1,547 @@
-# מונדיאל 2026 — סביבת עבודה לתחזיות (World Cup 2026 Prediction Workspace)
+# World Cup 2026 Prediction Workspace
 
-סביבת עבודה עצמאית לחיזוי תוצאות המונדיאל, עדכון הסתברויות בזמן אמת לפי תוצאה ודקה,
-ומעקב אחרי "המצב שלי" (התחזיות / ההימורים) לאורך הטורניר.
+A self-contained workspace to predict the 2026 FIFA World Cup: pre-match
+win/draw/loss probabilities, **live** probability updates from the current score
+and minute, a Monte-Carlo simulation of the full knockout bracket, and tracking
+of how your own predictions are doing. The model is a transparent Dixon-Coles
+Poisson built on FIFA ranking points, blended with expert scorelines and nudged
+by head-to-head history and recent form.
 
-A self-contained workspace to predict World Cup 2026 matches, update live
-win/draw/loss probabilities from the current score + minute, and track how your
-predictions are doing. UI is in Hebrew (RTL); stack is Python + Streamlit.
+> The dashboard UI is in **Hebrew (RTL)**; this README and all code are in English.
 
-## מבנה הפרויקט / Project layout
+---
+
+## TL;DR / Quickstart
+
+```bash
+pip install -r requirements.txt          # 1. install deps
+python build_data.py && python build_excel.py   # 2. build derived data + Excel
+streamlit run app.py                      # 3. launch the dashboard (http://localhost:8501)
+```
+
+Then open the **"משחק חי" (Live Match)** view, pick a match, set the minute and
+score, and watch the win/draw/loss probabilities and your prediction status
+update instantly.
+
+---
+
+## Overview / Use Cases
+
+A single Python + Streamlit workspace that turns team ratings and a handful of
+CSV files into live, explainable football predictions.
+
+- **Predict** every group-stage match and the full knockout bracket.
+- **Live updates** — recompute win/draw/loss probabilities from score + minute.
+- **Blend signals** — model + expert scores + head-to-head + recent form + news.
+- **Simulate** the whole tournament with Monte-Carlo (qualify → R16 → … → title).
+- **Track your bets** — expected points and per-pick status (on track / at risk).
+- **Excel mirror** — an `.xlsx` template that reproduces the in-play logic in
+  formulas for offline what-if play.
+
+---
+
+## Project Layout
 
 ```
 WorldCup2026/
-├── data/
-│   ├── groups.csv            # 12 הבתים
-│   ├── teams.csv             # 48 נבחרות + נקודות פיפ"א (fifa_points) + דירוג 0-100
-│   ├── matches.csv           # 72 משחקי שלב הבתים + התוצאה הצפויה מהמחקר
-│   ├── odds.csv              # הסתברויות 1X2 לפני משחק (נגזרות מהמודל)
-│   ├── expert_scores.csv     # תוצאות מומחה לכל משחק (לשילוב במודל)
-│   ├── my_predictions.csv    # התחזיות שלי (נזרעות מהמחקר)
-│   ├── players.csv           # שחקני מפתח + נתח שערים/בישולים (לשאלות הבונוס)
-│   ├── h2h.csv               # מפגשי עבר בין נבחרות (head-to-head) — משפיע על התחזית
-│   ├── form.csv              # מומנטום: תוצאות אחרונות לכל נבחרת — משפיע על התחזית
-│   ├── news_adjustments.csv  # עדכוני Hermes לפני משחק (פציעות / קו הימורים)
-│   ├── cowork_model.json     # נקודות פיפ"א + מודל מסשן Cowork קודם
-│   └── cowork_expert.json    # תוצאות מומחה גולמיות מ-Cowork
+├── data/                     # all inputs + derived data (CSV + JSON)
+│   ├── groups.csv            # the 12 groups
+│   ├── teams.csv             # 48 teams + FIFA points + 0–100 power rating
+│   ├── matches.csv           # 72 group fixtures + research scoreline + live state
+│   ├── odds.csv              # pre-match 1X2 probabilities (model-derived)
+│   ├── expert_scores.csv     # expert scoreline per match (blended into the model)
+│   ├── my_predictions.csv    # your predictions (seeded from research)
+│   ├── players.csv           # key players + goal/assist share (bonus questions)
+│   ├── h2h.csv               # head-to-head past meetings (affects the model)
+│   ├── form.csv              # recent-form / momentum per team (affects the model)
+│   ├── news_adjustments.csv  # Hermes pre-match updates (injuries / line moves)
+│   ├── cowork_model.json     # FIFA points + base ratings from a prior session
+│   └── cowork_expert.json    # raw expert scorelines from a prior session
 ├── src/
-│   ├── engine.py           # מנוע ההסתברויות (דיקסון-קולס על נקודות פיפ"א) — ניתן להחלפה
-│   ├── models.py           # שכבת הנתונים + update_match_state + ממשק Hermes
-│   └── knockout.py         # סימולציית מונטה קרלו של כל הטורניר
-├── app.py                  # לוח הבקרה (Streamlit, עברית/RTL)
-├── hermes.py               # ממשק CLI לסוכן Hermes (עדכוני חדשות + briefing)
-├── scout.py                # סורק חדשות פציעות/השעיות לפני משחק
-├── fetch_h2h.py            # מרענן מפגשי-עבר (h2h.csv) משליפה אמיתית מהאינטרנט
-├── fetch_form.py           # מרענן מומנטום (form.csv) משליפה אמיתית מהאינטרנט
-├── build_data.py           # מייצר fifa_points, expert_scores.csv, odds.csv, תחזיות
-├── build_excel.py          # מייצר תבנית אקסל
+│   ├── engine.py             # the probability model (Dixon-Coles on FIFA points)
+│   ├── models.py             # DataStore: data layer + update_match_state + Hermes API
+│   └── knockout.py           # Monte-Carlo simulation of the whole tournament
+├── app.py                    # Streamlit dashboard (Hebrew / RTL)
+├── hermes.py                 # CLI bridge for the Hermes agent (news + briefing)
+├── scout.py                  # injury / suspension news scout (pre-match)
+├── fetch_h2h.py              # refreshes h2h.csv from a live web search
+├── fetch_form.py             # refreshes form.csv from a live web search
+├── build_data.py             # builds fifa_points, expert_scores.csv, odds.csv, predictions
+├── build_excel.py            # builds the Excel template
 └── requirements.txt
 ```
 
-## התקנה / Install
+**Major components**
+
+- **`data/`** — the single source of truth. Edit the CSVs, rerun the build
+  scripts, and every downstream view updates.
+- **`src/engine.py`** — the `ProbabilityModel` and the pure math (goal
+  expectations, Dixon-Coles grid, H2H/form supremacy). Swappable.
+- **`src/models.py`** — `DataStore`, the high-level object the dashboard, Excel
+  mirror, and Hermes all use. Hosts `update_match_state` and the news interface.
+- **`src/knockout.py`** — Monte-Carlo of the full tournament on the official
+  FIFA 2026 bracket.
+- **`app.py`** — the Hebrew/RTL Streamlit dashboard.
+- **`hermes.py`, `scout.py`, `fetch_h2h.py`, `fetch_form.py`** — agent-facing
+  CLIs for news, scouting, and data refresh.
+- **`build_data.py`, `build_excel.py`** — regenerate derived data and the Excel
+  template.
+
+---
+
+## Installation
+
+Requires **Python 3.10+**.
 
 ```bash
 cd WorldCup2026
 pip install -r requirements.txt
 ```
 
-## הרצה / Run the dashboard
+(Optional but recommended: create a virtual environment first with
+`python -m venv .venv` and activate it.)
+
+---
+
+## Running the Dashboard
 
 ```bash
 streamlit run app.py
 ```
 
-הדפדפן ייפתח על http://localhost:8501 עם שלוש תצוגות:
-- **משחקים** — כל 72 המשחקים, סינון לפי בית, הסתברויות 1X2 והתחזית שלי.
-- **משחק חי** — בחירת משחק, הזנת דקה + תוצאה ידנית, וצפייה מיידית בהסתברויות
-  המעודכנות ובסטטוס התחזית (🟢 במסלול / 🟡 בסיכון / 🔴 כמעט אבוד).
-- **עדכוני Hermes** — הסתברויות בסיס מול הסתברויות מעודכנות לפי חדשות, עם המלצה
-  אם הניחוש שלך מושפע. ניתן להזין עדכון ידני לבדיקה.
-- **סקירת טורניר** — נקודות צפויות, פילוח סטטוסים, וסימולציית מונטה קרלו להמשך.
-- **סימולציית נוקאאוט** — מריץ את כל הטורניר אלפי פעמים ומציג לכל נבחרת את
-  הסיכוי להעפיל ולהגיע ל-1/8, רבע, חצי, גמר ולזכייה.
+The browser opens at `http://localhost:8501`. The UI is in Hebrew (RTL); the
+views are:
 
-## עדכון תוצאות חי / Updating live scores
+- **משחקים (Matches)** — all 72 group games, filter by group, 1X2 probabilities,
+  and your pick.
+- **משחק חי (Live Match)** — pick a match, enter minute + score, and see the
+  updated probabilities and prediction status (🟢 / 🟡 / 🔴) live. "💾 Save"
+  writes the state back to `matches.csv`.
+- **עדכוני Hermes (Hermes Updates)** — base vs news-adjusted probabilities with a
+  recommendation; supports manual entry for testing.
+- **סקירת טורניר (Tournament Overview)** — expected points, status breakdown, and
+  a Monte-Carlo of your remaining predictions.
+- **סימולציית נוקאאוט (Knockout Simulation)** — runs the whole tournament
+  thousands of times and shows each team's qualify / R16 / QF / SF / final /
+  title odds.
+- **בראקט מסומלץ (Simulated Bracket)** — one full random run of the bracket.
+- **שאלות בונוס (Bonus Questions)** — model-derived answers to tournament side
+  bets.
 
-אין שליפה מ-API חיצוני בגרסה זו. שתי דרכים לעדכן:
+> Streamlit caches the `DataStore` (`@st.cache_resource`). After editing data
+> files or refreshing CSVs, restart the app (or clear the cache) so changes load.
 
-1. **בדאשבורד:** תצוגת "משחק חי" → קבע דקה + שערים → ההסתברויות מתעדכנות מיד.
-   לחיצה על "💾 שמור מצב משחק" כותבת ל-`matches.csv`.
-2. **בקוד:** הפונקציה המרכזית
+---
+
+## Public API / Core Interfaces
+
+Everything (Streamlit, the CLIs, the Excel builder, the knockout sim) sits on top
+of two objects.
+
+**`DataStore`** (`src/models.py`) — load once, then query/mutate:
 
 ```python
 from src.models import DataStore
+
 ds = DataStore.load("data")
-state = ds.update_match_state("I1", minute=80, home_goals=2, away_goals=1)
-# state -> JSON עם p_home/p_draw/p_away, lambda, וסטטוס התחזית שלי
-# אופציונלי: latest_odds={"home": -150, "away": +400} כדי לדרוס את דירוגי הכוח
+
+# Live update: persists state and returns all derived probabilities + my status
+state = ds.update_match_state("A1", minute=80, home_goals=2, away_goals=1)
+# -> dict with p_home/p_draw/p_away, lambdas, status, my_prediction
+
+# Pre-match probabilities (optionally apply active news adjustments)
+probs = ds.pre_match_probs("A1", apply_news=False)
+
+# Base vs adjusted briefing + a Hebrew recommendation (what Hermes consumes)
+briefing = ds.match_briefing("A1")
 ```
 
-## עדכוני Hermes לפני משחק / Pre-game news updates
+`update_match_state(match_id, minute, home_goals, away_goals, rating_override=None, use_news=True)`
+— `rating_override={"home": <fifa>, "away": <fifa>}` overrides stored ratings for
+a single computation; `use_news=True` also applies active news adjustments.
 
-סוכן **Hermes** (רץ אצלך ב-Telegram) סורק את הרשת — אתרי הימורים, חדשות ספורט,
-הודעות פיפ"א — ומזין עדכונים לפני המשחק. הסריקה נעשית ב-Hermes; סביבת העבודה
-הזו היא ה**מקלט**: היא מחשבת מחדש את ההסתברויות ומפיקה המלצה.
+**`ProbabilityModel`** (`src/engine.py`) — the swappable model interface:
 
-הממשק הוא CLI שמחזיר JSON (`hermes.py`), כך ש-Hermes יכול פשוט להריץ פקודה:
+- `pre_match(rating_home, rating_away, neutral=False, expert=None, h2h_sup=0.0, form_sup=0.0)`
+- `in_play(rating_home, rating_away, minute, home_goals, away_goals, expert=None, h2h_sup=0.0, form_sup=0.0)`
+
+Both return a dict with `p_home`, `p_draw`, `p_away`, and the underlying
+`lambda_home` / `lambda_away`.
+
+---
+
+## Data Files and Schemas (`data/`)
+
+### `groups.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `group_id` | str | Group letter (A–L) |
+| `name_he` | str | Hebrew display name |
+
+### `teams.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `team_id` | str | 3-letter team code (e.g. `MEX`) |
+| `name_he` / `name_en` | str | Display names |
+| `group_id` | str | Group letter |
+| `confederation` | str | e.g. CONCACAF, UEFA |
+| `group_winner_odds` | int | American odds (legacy/display only) |
+| `tier` | int | Seeding tier |
+| `power_rating` | float | 0–100 strength proxy (derived from `fifa_points`) |
+| `fifa_points` | float | FIFA ranking points — the engine's strength input |
+
+### `matches.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | e.g. `A1` |
+| `group_id` | str | Group letter |
+| `stage` | str | `group` (knockout slots live in `knockout.py`) |
+| `home_id` / `away_id` | str | Team codes |
+| `kickoff` | str | Local datetime |
+| `venue` | str | Stadium / city |
+| `status` | str | `scheduled` / `live` / `finished` |
+| `minute` | int | Current minute (live) |
+| `home_goals` / `away_goals` | int | Current/final score (blank if unplayed) |
+| `doc_pred_home` / `doc_pred_away` | int | Research scoreline |
+
+### `odds.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | Match key |
+| `p_home` / `p_draw` / `p_away` | float | Model-derived 1X2 probabilities |
+
+### `expert_scores.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | Match key |
+| `expert_home` / `expert_away` | int | Expert scoreline (blended into the model) |
+
+### `my_predictions.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | Match key |
+| `pick` | str | `H` / `D` / `A` |
+| `pred_home` / `pred_away` | int | Predicted scoreline |
+| `confidence` | int | Your confidence |
+| `stake` | float | Stake / weight |
+
+### `players.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `team_id` | str | Team code |
+| `name_he` / `name_en` | str | Player names |
+| `role` | str | Position (e.g. FW) |
+| `goal_share` | float | Share of team goals (manual estimate) |
+| `assist_share` | float | Share of team assists (manual estimate) |
+
+### `h2h.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `team_a` / `team_b` | str | The two teams (order-independent) |
+| `a_goals` / `b_goals` | int | Score in that meeting |
+| `comp` | str | Stage: `friendly` / `group` / `knockout` / `semifinal` / `final` (free text mapped by keyword) |
+| `year` | int | Year of the meeting |
+
+### `form.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `team_id` | str | Team code |
+| `gf` / `ga` | int | Goals for / against (this team's perspective) |
+| `comp` | str | Stage label (same vocabulary as `h2h.csv`) |
+| `date` | str | `YYYY-MM-DD` (or year) of the match |
+
+### `news_adjustments.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `adj_id` | str | Unique id |
+| `match_id` | str | Match key |
+| `team_id` | str | Affected team |
+| `kind` | str | `rating_delta` / `lambda_mult` / `info` |
+| `value` | float | Numeric effect |
+| `note_he` | str | Hebrew note |
+| `source` | str | Source URL/name |
+| `created_at` | str | ISO timestamp |
+| `active` | int | 1 = active, 0 = cleared |
+
+### JSON sources
+- **`cowork_model.json`** — FIFA points / base ratings imported from a prior
+  Cowork session; `build_data.py` reads it to populate `fifa_points`.
+- **`cowork_expert.json`** — raw expert scorelines; `build_data.py` reads it to
+  build `expert_scores.csv`.
+
+---
+
+## Loading Your Own Data
+
+1. Edit the CSV files in `data/` (keep the headers).
+2. Rebuild derived data:
+   ```bash
+   python build_data.py     # fifa_points + power_rating + expert_scores.csv + odds.csv + predictions
+   python build_excel.py    # refresh the Excel template
+   ```
+
+`build_data.py` pulls FIFA points from `cowork_model.json` and expert scores from
+`cowork_expert.json`. To change a team's strength, edit `fifa_points` in
+`teams.csv` (or the JSON) and rerun. It **does not overwrite** existing rows in
+`my_predictions.csv` — it only fills missing ones.
+
+---
+
+## Excel Template
+
+`python build_excel.py` generates **`WorldCup2026_Template.xlsx`** with sheets:
+`Teams`, `Matches`, `Odds`, `MyPredictions`, `LiveStatus`.
+
+- **`LiveStatus`** demonstrates the in-play logic in formulas — change the minute
+  or score and the status flag updates (a time-weighted approximation of the
+  Poisson engine). The `Teams` sheet includes an American-odds → probability
+  conversion.
+- The Excel file mirrors the Python model **approximately**; the Python engine in
+  `src/engine.py` remains the source of truth.
+
+---
+
+## Probability Model
+
+**In plain English:** each team's strength is its FIFA ranking points (a neutral
+~1400–1900 scale). A Dixon-Coles Poisson model turns the rating gap into expected
+goals for each side, then into a win/draw/loss grid. The model is blended with an
+expert scoreline, and finally nudged by two small, capped signals: **head-to-head
+history** and **recent form**.
+
+**The detail** (`src/engine.py`):
+
+1. **Team strength** = FIFA ranking points (mean ≈ 1500). Neutral, unlike
+   group-winner odds (which conflate strength with how easy a group is).
+2. **Pre-match goals:**
+   ```
+   sup    = (rating_home - rating_away) / K        (+ home advantage, + h2h, + form)
+   total  = BASE_TOTAL + |r_h + r_a - 2*FIFA_MEAN| / 4000
+   λ_home = max(MIN_LAMBDA, (total + sup) / 2)
+   λ_away = max(MIN_LAMBDA, (total - sup) / 2)
+   ```
+   The 1X2 grid applies a **Dixon-Coles low-score correction** (`DC_RHO = -0.06`)
+   so 0-0 / 1-0 / 0-1 / 1-1 are dependent rather than independent.
+3. **Expert blend:** λ is pulled toward the expert scoreline (`EXPERT_W = 0.55`
+   on the model, 0.45 on the expert).
+4. **Head-to-head (`h2h.csv`):** a small bounded supremacy bump. Each past
+   meeting is **weighted by stage** (`H2H_COMP_WEIGHTS`: friendly 0.40, group
+   1.00, knockout 1.25, semifinal 1.40, final 1.50), **decays with age**
+   (6-year half-life), and **shrinks toward 0 for small samples**. Capped at
+   **±0.50 goals** (`H2H_CAP`). **Two teams that never met contribute exactly 0.**
+   Applied at neutral venues too — history travels with the matchup.
+5. **Recent form / momentum (`form.csv`):** how a team is *arriving*. Each recent
+   match scores a result point (+1 / 0 / −1) plus a capped goal-margin term
+   (`FORM_GD_COEF`, clamped at ±3 so a 7-0 ≈ a 3-0), **stage-weighted**
+   (`FORM_COMP_WEIGHTS`: friendly 0.60 — milder than H2H, since pre-tournament
+   games are mostly friendlies — competitive 1.00, knockout 1.15+), **decaying**
+   (180-day half-life) and **shrunk** for small samples. The **difference**
+   between the two teams' form scores nudges supremacy, capped at **±0.35 goals**
+   (`FORM_CAP`). **A team with no recent matches scores exactly 0**, and two teams
+   with equal form cancel — momentum only ever tilts toward whoever arrives hotter.
+6. **In-play:** only the *remaining* share of each λ applies (scaled by minutes
+   left), added to the current score; recomputed as independent Poisson (the
+   Dixon-Coles correction is a full-match calibration).
+
+**Assumptions (documented so you can challenge them):**
+- 90 minutes of regular time; stoppage time ignored.
+- Home advantage is a flat supremacy bump (`HOME_SUP`); `neutral=True` drops it.
+- No explicit red-card modeling.
+
+**Replacing the model:** swap the `ProbabilityModel` class in `src/engine.py` for
+any implementation exposing the same `pre_match` / `in_play` interface — every
+caller works through it unchanged.
+
+---
+
+## Hermes Integration and News Updates
+
+**Hermes** is an external agent (runs in Telegram) that scrapes the web — betting
+sites, sports news, FIFA announcements — and pushes pre-match updates **into**
+this workspace, then pulls a briefing to decide whether to alert you. The
+contract is a JSON-over-stdout CLI (`hermes.py`); adjustments land in
+`data/news_adjustments.csv`, which the dashboard and engine read on the next
+refresh.
 
 ```bash
-# ברזיל מאבדת שחקן מפתח לפני משחק C1 — הורדת 60 נק' פיפ"א מברזיל:
-python hermes.py update --match C1 --team BRA --kind rating_delta --value -60 `
-    --note "ברזיל מאבדת שחקן מפתח - פגיעה בהתקפה" --source "espn.com"
+# Brazil loses a key player before C1 — knock 60 FIFA points off Brazil:
+python hermes.py update --match C1 --team BRA --kind rating_delta --value -60 \
+    --note "ברזיל מאבדת שחקן מפתח" --source "espn.com"
 
-# שאיבת ה-briefing (בסיס מול מעודכן + המלצה בעברית):
+# Pull the briefing (base vs adjusted probabilities + Hebrew recommendation):
 python hermes.py briefing --match C1
 
-# רשימה / ביטול עדכון:
+# List / clear adjustments:
 python hermes.py list --match C1
 python hermes.py clear --id <adj_id>
 
-# רענון דירוג קבוע לפני הטורניר (דירוג פיפ"א חדש / פציעה ארוכת-טווח):
-python hermes.py rate --team BRA --value 1730   # קביעת ערך מוחלט
-python hermes.py rate --team ARG --delta -120   # או שינוי יחסי
+# Permanent pre-tournament rating refresh (new ranking / long-term injury):
+python hermes.py rate --team BRA --value 1730   # absolute
+python hermes.py rate --team ARG --delta -120   # relative
 ```
 
-**`update` מול `rate`:** `update` הוא עדכון חד-משחקי וחי שלא משנה את חוזק הבסיס של
-הנבחרת; `rate` משנה את `fifa_points` ב-`teams.csv` לצמיתות (ומחשב מחדש את
-`power_rating`), כך שכל המודלים — בתים, נוקאאוט, בונוס — משתמשים בחוזק החדש.
+**`update` vs `rate`:**
+- **`update`** — a single-match, live adjustment that does **not** change the
+  team's base strength. Kinds: `rating_delta` (FIFA-point delta), `lambda_mult`
+  (multiplier on expected goals), `info` (note only).
+- **`rate`** — a **permanent** change to `fifa_points` in `teams.csv` (and
+  recomputed `power_rating`), so every model (groups, knockout, bonus) uses the
+  new strength.
 
-סוגי עדכון (`--kind`):
-- `rating_delta` — שינוי נקודות פיפ"א של נבחרת (פציעה/חזרת שחקן).
-- `lambda_mult` — מכפיל ישיר על תוחלת השערים של נבחרת (תזוזת קו הימורים).
-- `info` — הערה בלבד, ללא השפעה מספרית.
+Any command that writes (`--write`, `update`, `rate`, `clear`) updates the CSVs;
+Streamlit and the engine pick up the change on the next run/refresh.
 
-ה-`briefing` מחזיר את הסתברויות הבסיס, ההסתברויות המעודכנות, וה-`recommendation` —
-ניסוח כמו "הסיכוי של הניחוש שלך (ניצחון ביתית) ירד ב-7 נק' אחוז בעקבות החדשות".
-ההמלצה ננעלת על **הניחוש שלך** אם קיים, אחרת על הפייבוריט. הכול נשמר ב-
-`data/news_adjustments.csv` (גם הדאשבורד קורא משם, תצוגת "עדכוני Hermes").
+---
 
-## טעינת נתונים משלך / Loading your own data
+## Automated Data Refresh (`fetch_h2h.py`, `fetch_form.py`)
 
-ערוך את קבצי ה-CSV ב-`data/` (שמור על הכותרות), ואז הרץ:
+Two scrapers (modeled on `scout.py`) refresh the H2H and form signals from a live
+open web search (DuckDuckGo lite). Both follow a **recommend-don't-apply**
+philosophy: they print proposed rows and only write when you pass `--write`.
+
+**`fetch_h2h.py`** — recent meetings *between* two teams; classifies
+friendly/competitive, recency-filters, merges into `h2h.csv`:
 
 ```bash
-python build_data.py     # נקודות פיפ"א + power_rating + expert_scores.csv + odds.csv + תחזיות
-python build_excel.py    # מרענן את תבנית האקסל
+python fetch_h2h.py                 # propose for all group pairs (dry run)
+python fetch_h2h.py --pair ENG CRO  # one pair
+python fetch_h2h.py --write         # fetch + merge into h2h.csv
+python hermes.py h2h --pair ENG CRO --write   # same, via Hermes
 ```
 
-`build_data.py` שואב את נקודות פיפ"א מ-`data/cowork_model.json` ואת תוצאות המומחה
-מ-`data/cowork_expert.json`. לעדכון חוזק נבחרת, ערוך את `fifa_points` ב-`teams.csv`
-(או את ה-JSON) והרץ מחדש.
-
-`build_data.py` לא ידרוס תחזיות קיימות ב-`my_predictions.csv` — רק יוסיף חסרות.
-
-## תבנית אקסל / Excel template
-
-`python build_excel.py` יוצר את `WorldCup2026_Template.xlsx` עם הגיליונות
-Teams / Matches / Odds / MyPredictions / LiveStatus. גיליון **LiveStatus** מדגים
-את הלוגיקה בנוסחאות (שנה דקה/שערים וראה את הדגל מתעדכן), בקירוב משוקלל-זמן של
-מנוע הפואסון. גיליון Teams כולל נוסחת המרה מיחס אמריקאי להסתברות.
-
-## מודל ההסתברות / The probability model
-
-מודל **דיקסון-קולס** מבוסס נקודות דירוג פיפ"א, שקוף ומודולרי (`src/engine.py`):
-
-1. **דירוגי כוח:** נקודות דירוג פיפ"א (סקאלה ~1400–1900, ממוצע ~1500) —
-   מדד ניטרלי של חוזק. שלא כמו יחסי מנצחת-הבית, שמערבבים חוזק עם "כמה הבית קל":
-   ברזיל, עם יחסים קצרים בבית קל, מדורגת ~מקום 6, וספרד נשארת בצמרת — בהתאם למחקר.
-2. **לפני משחק:** `sup=(r_h-r_a)/200` (+מקדם ביתיות), `total=2.6+|r_h+r_a-3000|/4000`,
-   `λ_home=(total+sup)/2`, `λ_away=(total-sup)/2`. הרשת 1X2 כוללת תיקון
-   דיקסון-קולס (ρ=-0.06) לתלות בתוצאות נמוכות (0-0/1-0/0-1/1-1).
-3. **שילוב מומחה:** ה-λ נמשך לעבר תוצאת המומחה (`expert_scores.csv`) במשקל 55%
-   למודל, 45% למומחה.
-4. **מפגשי עבר (head-to-head):** תוספת עליונות קטנה וחסומה מ-`data/h2h.csv` —
-   נבחרת שניצחה בעבר את היריבה הספציפית מקבלת דחיפה. **המעמד של כל מפגש משוקלל**
-   (`H2H_COMP_WEIGHTS`): ידידותי 0.4, שלב בתים 1.0, נוקאאוט 1.25, חצי-גמר 1.4,
-   גמר 1.5 — ניצחון בגמר מונדיאל שווה הרבה יותר מניצחון בידידות. מפגשים ישנים
-   דועכים (חצי-חיים 6 שנים), ומדגם קטן מתכווץ לעבר 0 (`H2H_SHRINK`). התרומה חסומה
-   ל-±0.5 שער (`H2H_CAP`), כי דירוג פיפ"א כבר תופס את רוב החוזק. **שתי נבחרות
-   שלא נפגשו מעולם — תרומה 0 בדיוק (אין השפעה על המודל).** חל גם במגרש ניטרלי
-   (היסטוריה נוסעת עם הצמד).
-5. **מומנטום (recent form):** תוספת עליונות קטנה וחסומה מ-`data/form.csv` — לפי
-   המשחקים האחרונים שכל נבחרת הביאה איתה לטורניר. **כל משחק שווה נקודת תוצאה**
-   (ניצחון +1 / תיקו 0 / הפסד −1) **בתוספת מרכיב הפרש-שערים חסום** (`FORM_GD_COEF`,
-   חסום ל-±3 ב-`FORM_GD_CAP` — כך ש-7:0 שקול בערך ל-3:0). המעמד משוקלל
-   (`FORM_COMP_WEIGHTS`): ידידותי 0.6 (לפני מונדיאל רוב המשחקים ידידותיים, ולכן
-   המשקל מתון יותר מ-H2H), תחרותי/מוקדמות 1.0, נוקאאוט 1.15+. משחקים ישנים דועכים
-   (חצי-חיים 180 יום), ומדגם קטן מתכווץ לעבר 0 (`FORM_SHRINK`). **ה**הפרש** בין
-   ציוני המומנטום של שתי הנבחרות** מזיז את הקו (`FORM_WEIGHT`), חסום ל-±0.35 שער
-   (`FORM_CAP`). **נבחרת ללא תוצאות אחרונות — ציון 0 בדיוק (אין השפעה).** שתי
-   נבחרות בעלות מומנטום זהה מתקזזות ל-0, כך שהקו זז רק לעבר מי שמגיע באמת חם יותר.
-6. **בזמן אמת:** רק החלק הנותר של תוחלת השערים תקף (לפי הדקות שנותרו), מתווסף
-   לתוצאה הנוכחית, וה-1X2 מחושב מחדש (פואסון בלתי-תלוי; תיקון דיקסון-קולס הוא
-   כיול למשחק מלא).
-
-`data/h2h.csv`: עמודות `team_a,team_b,a_goals,b_goals,comp,year` (סדר הנבחרות לא
-משנה — הפרש השערים מתהפך אוטומטית לפי הנבחרת הביתית). `comp` = מעמד המשחק:
-`friendly` / `group` / `knockout` / `semifinal` / `final` (גם טקסט חופשי כמו
-"World Cup semi-final" ממופה אוטומטית). הנתונים אמיתיים ומסוננים למפגשים אחרונים
-בלבד (משנת 2018 ואילך).
-
-**רענון אוטומטי מהאינטרנט (`fetch_h2h.py`):** סקריפט בנוסח `scout.py` ששולף
-מפגשים אחרונים מחיפוש אינטרנט פתוח (DuckDuckGo), מסווג ידידותי/תחרותי, מסנן לפי
-שנה וממזג ל-`h2h.csv` (כולל ניקוי כפילויות לפי הצמד, לרבות סדר הפוך):
+**`fetch_form.py`** — recent results for a *single* team; merges into `form.csv`:
 
 ```bash
-python fetch_h2h.py                 # הצעה לכל זוגות הבתים (הרצה יבשה)
-python fetch_h2h.py --pair ENG CRO  # זוג בודד
-python fetch_h2h.py --write         # שליפה + מיזוג ל-h2h.csv
-python hermes.py h2h --pair ENG CRO --write   # אותו דבר דרך Hermes
+python fetch_form.py                # propose for all teams (dry run)
+python fetch_form.py --team MEX     # one team
+python fetch_form.py --write        # fetch + merge into form.csv
+python hermes.py form --team MEX --write      # same, via Hermes
 ```
 
-כמו `scout.py`, הסקריפט לא משנה את המודל בשקט — הוא מציע שורות ורק `--write` כותב.
-השימוש הטיפוסי הוא רענון של הצמד הקרוב לפני משחק (בקשה בודדת). סריקה של כל 72
-הזוגות בבת אחת עלולה להיחסם חלקית ע"י מגביל-הקצב של מנוע החיפוש (התנהגות צפויה —
-הסקריפט מדווח כמה זוגות נטענו ומדלג בחן על מה שנחסם).
+**Rate limiting:** DuckDuckGo throttles bursts, so a full sweep of all pairs/teams
+may be partially blocked (expected — the script reports how many loaded and skips
+blocked ones gracefully). **Recommended usage is per-pair / per-team** (a single
+request) right before a fixture. Both scripts use a real browser User-Agent and
+retry with backoff; no proxy configuration is required.
 
-`data/form.csv`: עמודות `team_id,gf,ga,comp,date` — שורה לכל משחק אחרון של נבחרת,
-מנקודת מבטה (`gf`=שערי זכות, `ga`=שערי חובה). `comp` כמו ב-h2h (מעמד המשחק) ו-`date`
-בפורמט `YYYY-MM-DD` (או שנה בלבד). הנתונים הראשוניים נזרעו מצילום-מסך של אתר הווינר
-(מקסיקו ודרום-אפריקה); נבחרת ללא שורות מקבלת מומנטום 0.
+---
 
-**רענון אוטומטי מהאינטרנט (`fetch_form.py`):** תאום של `fetch_h2h.py` — שולף את
-התוצאות האחרונות של *נבחרת בודדת* (במקום מפגשי-עבר *בין* שתיים), מסווג
-ידידותי/תחרותי, מסנן לפי שנה וממזג ל-`form.csv` (ניקוי כפילויות לפי נבחרת/תוצאה/תאריך):
+## Knockout Simulation
 
-```bash
-python fetch_form.py                # הצעה לכל הנבחרות (הרצה יבשה)
-python fetch_form.py --team MEX     # נבחרת בודדת
-python fetch_form.py --write        # שליפה + מיזוג ל-form.csv
-python hermes.py form --team MEX --write   # אותו דבר דרך Hermes
-```
+`src/knockout.py` runs a Monte-Carlo of the entire tournament:
 
-גם כאן — דרי-ראן כברירת מחדל, רק `--write` כותב; ברירת המחדל שומרת משחקים מ-2025
-ואילך (מומנטום = הריצה לטורניר, לא היסטוריה).
-
-**הנחות (ניתנות לאתגור):** 90 דקות; מקדם ביתיות שטוח; ללא כרטיסים אדומים
-מפורשים. **כדי לשדרג:** החלף את המחלקה `ProbabilityModel` ב-`engine.py` — שאר
-הקוד עובד מולה דרך ממשק אחיד (`pre_match`, `in_play`).
-
-## סימולציית נוקאאוט / Knockout simulation
-
-`src/knockout.py` מריץ מונטה קרלו של כל הטורניר:
-
-1. **שלב הבתים** — כל משחק עם `status=finished` ב-`matches.csv` ננעל לתוצאה
-   שהוזנה (כך שהסימולציה מתעדכנת ככל שה-Telegram agent כותב תוצאות אמת); השאר
-   נדגם מהמודל. הדירוג בבית: נקודות → הפרש שערים → שערי זכות.
-2. **מעפילות** — 12 מנצחות בתים + 12 סגניות + 8 המקומות-השלישיים הטובים.
-3. **בראקט** — הבראקט **הרשמי של פיפא 2026** (משחקים M73–M104). שיבוצי מקומות-
-   שלישיים נעשים לפי טבלת Annex C הרשמית: לכל אחד מ-8 שיבוצי השלישיים יש רשימת
-   בתים מותרת, ושמונת השלישיים המעפילים מוצמדים לשיבוצים בהתאמה דו-צדדית מאולצת
-   (כך אין מפגש חוזר מאותו בית). עץ ה-1/8/רבע/חצי מחווט לפי תלות-משחקים מפורשת,
-   כך שחצאי הגרלה תואמים את הבראקט האמיתי.
-4. **משחקי נוקאאוט** — במגרש ניטרלי; תיקו מוכרע (הארכה/פנדלים) לפי חוזק יחסי.
+1. **Group stage** — each game with `status=finished` in `matches.csv` is locked
+   to its real result; the rest is sampled from the model. Standings rank by
+   points → goal difference → goals for.
+2. **Qualifiers** — 12 group winners + 12 runners-up + the 8 best third-placed
+   teams.
+3. **Bracket** — the **official FIFA 2026 bracket** (matches M73–M104). Third-place
+   slots use the official Annex-C candidate lists, assigned by constrained
+   bipartite matching (no same-group rematch). The R16/QF/SF tree is wired by
+   explicit match dependencies.
+4. **Knockout games** — neutral venue; draws resolve (ET/penalties) by relative
+   strength. H2H and form supremacy are precomputed once per run and applied
+   throughout.
 
 ```python
 from src.models import DataStore
 from src import knockout
-df = knockout.run(DataStore.load("data"), n=2000, seed=42)
-# df: שורה לכל נבחרת עם qualify_% / r16_% / qf_% / sf_% / final_% / title_%
+
+ds = DataStore.load("data")
+df = knockout.run(ds, n=2000, seed=42)
+# df: one row per team with qualify_% / r16_% / qf_% / sf_% / final_% / title_%
+
+# One full random bracket (scores + winners) instead of probabilities:
+bracket = knockout.simulate_detail(ds, seed=42)
 ```
 
-**הערה:** הבראקט (`R32` + `TREE` ב-`knockout.py`) הוא המסלול הרשמי של פיפ"א 2026,
-כולל רשימות הבתים המותרים לשיבוצי השלישיים (Annex C). שיבוץ השלישי לכל סלוט נעשה
-בריצה לפי אילו 8 בתים סיפקו שלישי מעפיל (התאמה דו-צדדית מאולצת).
+> `knockout.py` is a library module (no standalone CLI). Call `knockout.run` /
+> `knockout.simulate_detail` from Python, or use the dashboard's simulation views.
 
-## הערות על הנתונים / Data caveats
+---
 
-- **חוזק הנבחרות = נקודות דירוג פיפ"א** (`fifa_points`), שנלקחו ממודל מסשן Cowork
-  קודם (`cowork_model.json`). זהו מדד ניטרלי, ולכן ברזיל יורדת ל~מקום 6 וספרד
-  נשארת בצמרת — בניגוד לגרסה הקודמת שהתבססה על יחסי מנצחת-בית והעלתה את ברזיל.
-- **הסתברויות 1X2 נגזרות מהמודל** (דיקסון-קולס על נקודות פיפ"א + שילוב מומחה),
-  לא מיחסי 1X2 ישירים.
-- יחסי מנצחת-הבית (`group_winner_odds`) עדיין בקובץ לצורך תצוגה/השוואה בלבד.
-- אצטדיונים ושעות פתיחה מולאו חלקית (כפי שהופיעו במחקר); השאר ריק להשלמה.
-- **שאלות שחקן** (מלך הבישולים, אמבפה מול ויניסיוס) מחושבות מ-`players.csv`:
-  שערים צפויים = `goal_share` × תוחלת שערי הנבחרת לאורך הטורניר; בישולים צפויים =
-  `assist_share` × אותו ערך. נתחי השערים/בישולים הם הערכה ידנית לשחקני המפתח
-  (לא יוצאים מהמודל ברמת הנבחרת), ולכן השאלות הללו מסומנות ⚠️ בדאשבורד.
+## UI Status Icons
+
+| Icon | Meaning |
+|------|---------|
+| 🟢 | Prediction currently on track (`ON_TRACK`) |
+| 🟡 | Prediction at risk (`AT_RISK`) |
+| 🔴 | Prediction very unlikely / almost dead (`ALMOST_DEAD`) |
+| ✅ | Finished — prediction was correct |
+| ❌ | Finished — prediction was wrong |
+
+---
+
+## Architecture & Data Flow
+
+```mermaid
+graph TD
+    User([User])
+    Excel[["WorldCup2026_Template.xlsx"]]
+
+    subgraph App["Streamlit dashboard (app.py)"]
+        UI[Views: Matches / Live / Hermes / Overview / Knockout / Bonus]
+    end
+
+    subgraph Core["Core library (src/)"]
+        DS[DataStore<br/>models.py]
+        ENG[ProbabilityModel<br/>engine.py]
+        KO[Knockout sim<br/>knockout.py]
+    end
+
+    subgraph Data["data/ (CSV + JSON)"]
+        CSVS[(teams / matches / odds<br/>expert / predictions / players)]
+        H2H[(h2h.csv)]
+        FORM[(form.csv)]
+        NEWS[(news_adjustments.csv)]
+        JSON[(cowork_model.json<br/>cowork_expert.json)]
+    end
+
+    Web((Web / Telegram))
+
+    User <--> UI
+    UI <--> DS
+    DS <--> ENG
+    KO --> DS
+    KO --> ENG
+    DS <--> CSVS
+    DS <--> H2H
+    DS <--> FORM
+    DS <--> NEWS
+
+    Hermes[hermes.py CLI] --> NEWS
+    Hermes --> DS
+    Web --> Hermes
+    Web --> FetchH2H[fetch_h2h.py]
+    Web --> FetchForm[fetch_form.py]
+    Web --> Scout[scout.py]
+    FetchH2H --> H2H
+    FetchForm --> FORM
+
+    JSON --> Build[build_data.py]
+    Build --> CSVS
+    Build2[build_excel.py] --> Excel
+    CSVS --> Build2
+    User -. opens / edits .-> Excel
 ```
+
+---
+
+## Tests
+
+Lightweight self-checking scripts live in `tests/` and can be run directly:
+
+```bash
+python tests/test_h2h.py     # head-to-head signal + agent path
+python tests/test_form.py    # momentum / recent-form signal + agent path
+```
+
+Each prints PASS/FAIL per check and asserts on failure (also runnable under
+`pytest` if installed).
+
+---
+
+## Disclaimer
+
+> This project is for **educational and entertainment purposes only**.
+> It is **not** betting or financial advice.
