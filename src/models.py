@@ -147,6 +147,44 @@ class DataStore:
 
         return issues
 
+    def coverage(self) -> dict[str, dict]:
+        """Report how many of the 48 teams have each optional signal populated.
+
+        The model treats missing form/H2H/player data as a neutral zero (no
+        nudge), so sparse data never *corrupts* a prediction — it just leaves a
+        signal dormant. This surfaces exactly where real data would add signal,
+        without ever fabricating numbers. Returns, per signal, the set size and a
+        sorted list of team_ids that are still missing it.
+
+        Keys: 'form', 'h2h', 'players'. Each value is
+        {'have': int, 'total': int, 'missing': list[str]}.
+        """
+        all_teams = set(self.teams["team_id"].astype(str)) if "team_id" in self.teams.columns else set()
+        total = len(all_teams)
+
+        def _have(df, cols) -> set[str]:
+            if df is None or df.empty:
+                return set()
+            present: set[str] = set()
+            for col in cols:
+                if col in df.columns:
+                    present |= set(df[col].astype(str))
+            return present & all_teams
+
+        out: dict[str, dict] = {}
+        for key, (df, cols) in {
+            "form": (self.form, ["team_id"]),
+            "h2h": (self.h2h, ["team_a", "team_b"]),
+            "players": (self.players, ["team_id"]),
+        }.items():
+            have = _have(df, cols)
+            out[key] = {
+                "have": len(have),
+                "total": total,
+                "missing": sorted(all_teams - have),
+            }
+        return out
+
     def save_matches(self) -> None:
         self.matches.to_csv(os.path.join(self.data_dir, DATA_FILES["matches"]), index=False)
 
@@ -230,6 +268,22 @@ class DataStore:
                 elo = float(row.iloc[0]["elo_points"])
                 return engine.blend_strength(fifa, elo, engine.ELO_WEIGHT, **stats)
         return fifa
+
+    def is_host(self, team_id: str) -> bool:
+        """True if a team is a 2026 host nation (USA / MEX / CAN).
+
+        Host nations keep a home-crowd advantage when they play at home; every
+        other group game is at a neutral venue for the visiting side. Data-driven
+        via an optional `host` column in teams.csv, falling back to engine.HOSTS.
+        """
+        if "host" in self.teams.columns:
+            row = self.teams.loc[self.teams.team_id == team_id]
+            if not row.empty:
+                try:
+                    return bool(int(row.iloc[0]["host"]))
+                except (TypeError, ValueError):
+                    pass
+        return str(team_id) in engine.HOSTS
 
     def match(self, match_id: str) -> pd.Series:
         return self.matches.loc[self.matches.match_id == match_id].iloc[0]
@@ -332,9 +386,10 @@ class DataStore:
         expert = self.expert_for(match_id)
         h2h_sup = 0.0 if rating_override else self.h2h_supremacy_for(m.home_id, m.away_id)
         form_sup = 0.0 if rating_override else self.form_supremacy_for(m.home_id, m.away_id)
+        neutral = not self.is_host(m.home_id)  # crowd edge only when a host is home
         probs = self.model.in_play(
             r_home, r_away, minute, home_goals, away_goals,
-            expert=expert, h2h_sup=h2h_sup, form_sup=form_sup,
+            neutral=neutral, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup,
         )
         if mult_h != 1.0 or mult_a != 1.0:
             remaining = probs.get("remaining_fraction", 0.0)
@@ -396,8 +451,9 @@ class DataStore:
         expert = self.expert_for(match_id)
         h2h_sup = self.h2h_supremacy_for(m.home_id, m.away_id)
         form_sup = self.form_supremacy_for(m.home_id, m.away_id)
+        neutral = not self.is_host(m.home_id)  # crowd edge only when a host is home
         lam_h, lam_a = engine.expected_goals(
-            r_home, r_away, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup
+            r_home, r_away, neutral=neutral, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup
         )
         lam_h *= mult_h
         lam_a *= mult_a

@@ -107,6 +107,24 @@ if hasattr(ds, "validate"):
     else:
         st.sidebar.caption("✓ נתונים תקינים")
 
+# Data-coverage indicator — how many of the 48 teams have each optional signal.
+# Missing data is a neutral zero (never corrupts a prediction), so this is an
+# honest "where would real data add signal?" gauge, not an error.
+if hasattr(ds, "coverage"):
+    _cov = ds.coverage()
+    _labels = {"form": "כושר עדכני", "h2h": "מפגשים היסטוריים", "players": "שחקנים"}
+    _lines = []
+    for _k in ("form", "h2h", "players"):
+        _c = _cov[_k]
+        _mark = "✓" if _c["have"] == _c["total"] else "•"
+        _lines.append(f"{_mark} {_labels[_k]}: {_c['have']}/{_c['total']}")
+    with st.sidebar.expander("📊 כיסוי נתונים", expanded=False):
+        st.caption("\n\n".join(_lines))
+        st.caption(
+            "נתונים חסרים נספרים כאפס (ללא השפעה) — אינם פוגמים בתחזית, "
+            "רק מצביעים היכן מידע אמיתי יוסיף אות."
+        )
+
 
 # --- view: fixtures ----------------------------------------------------------
 if view == "משחקים":

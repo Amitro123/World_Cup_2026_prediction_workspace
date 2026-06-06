@@ -149,8 +149,11 @@ def simulate_group(ds, group_id, ratings, rng, h2h=None, form=None):
         if str(m.status) == "finished" and pd.notna(m.home_goals):
             hg, ag = int(m.home_goals), int(m.away_goals)
         else:
+            # Tournament on neutral soil: a group game only carries a home-crowd
+            # advantage when the home_id is a 2026 host nation (USA/MEX/CAN).
+            neutral = not ds.is_host(h)
             hg, ag = engine.sample_score(
-                ratings[h], ratings[a], rng,
+                ratings[h], ratings[a], rng, neutral=neutral,
                 expert=ds.expert_for(m.match_id), h2h_sup=h2h.get((h, a), 0.0),
                 form_sup=_form_sup(form, h, a),
             )

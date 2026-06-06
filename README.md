@@ -297,6 +297,15 @@ issues = DataStore.load("data").validate()
 The dashboard runs this on every load and shows **✓ נתונים תקינים** or a warning
 list in the sidebar, so a bad edit is obvious immediately.
 
+**Coverage.** `DataStore.coverage()` reports how many of the 48 teams have each
+optional signal (`form`, `h2h`, `players`) populated — surfaced in the sidebar's
+**📊 כיסוי נתונים** panel. Missing data is treated as a neutral **zero** (a team
+with no recent form contributes no nudge; two teams that never met contribute no
+H2H), so sparse coverage never *corrupts* a prediction — it just leaves a signal
+dormant. The panel shows where real, sourced data would add signal; the right way
+to fill it is automated ingestion (Hermes / `scout.py`), never hand-invented
+numbers, which would inject noise and invite overfitting.
+
 ---
 
 ## Excel Template
@@ -357,7 +366,12 @@ history** and **recent form**.
 
 **Assumptions (documented so you can challenge them):**
 - 90 minutes of regular time; stoppage time ignored.
-- Home advantage is a flat supremacy bump (`HOME_SUP`); `neutral=True` drops it.
+- **Home advantage applies only to host nations.** 2026 is co-hosted by the
+  **USA, Mexico and Canada** (`engine.HOSTS`), so every match is on neutral soil
+  for the visiting team *except* when a host plays at home — there a real
+  home-crowd edge applies (`HOME_SUP`). A group game is therefore treated as
+  neutral unless its `home_id` is a host; all knockout games stay neutral. (You
+  can override per-team via an optional `host` column in `teams.csv`.)
 - No explicit red-card modeling.
 
 **Replacing the model:** swap the `ProbabilityModel` class in `src/engine.py` for
@@ -443,8 +457,10 @@ retry with backoff; no proxy configuration is required.
 `src/knockout.py` runs a Monte-Carlo of the entire tournament:
 
 1. **Group stage** — each game with `status=finished` in `matches.csv` is locked
-   to its real result; the rest is sampled from the model. Standings rank by
-   points → goal difference → goals for.
+   to its real result; the rest is sampled from the model. A group game is played
+   on neutral soil unless its `home_id` is a host nation (USA/MEX/CAN), which
+   keeps a home-crowd advantage. Standings rank by points → goal difference →
+   goals for.
 2. **Qualifiers** — 12 group winners + 12 runners-up + the 8 best third-placed
    teams.
 3. **Bracket** — the **official FIFA 2026 bracket** (matches M73–M104). Third-place
@@ -610,8 +626,9 @@ Lightweight self-checking scripts live in `tests/` and can be run directly:
 python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
-python tests/test_integrity.py # shootout cap + schema validation
+python tests/test_integrity.py # shootout cap + schema validation + data coverage
 python tests/test_elo.py       # FIFA/Elo blend + production gate
+python tests/test_hosts.py     # host-only home advantage (USA/MEX/CAN)
 ```
 
 Each prints PASS/FAIL per check and asserts on failure (also runnable under

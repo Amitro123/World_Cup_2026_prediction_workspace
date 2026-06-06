@@ -77,6 +77,30 @@ def test_validate_catches_bad_match_ref():
     assert any("NOPE" in i for i in issues)
 
 
+# --- data coverage -----------------------------------------------------------
+
+def test_coverage_reports_all_signals():
+    ds = DataStore.load(DATA_DIR)
+    cov = ds.coverage()
+    assert set(cov) == {"form", "h2h", "players"}
+    total = len(set(ds.teams["team_id"].astype(str)))
+    for key, c in cov.items():
+        assert c["total"] == total
+        assert 0 <= c["have"] <= total
+        # have + missing must partition the full squad
+        assert c["have"] + len(c["missing"]) == total
+        assert len(c["missing"]) == len(set(c["missing"]))  # no dupes
+
+
+def test_coverage_missing_excludes_present_teams():
+    """A team that appears in form.csv must not be listed as missing form."""
+    ds = DataStore.load(DATA_DIR)
+    cov = ds.coverage()
+    if not ds.form.empty and "team_id" in ds.form.columns:
+        present = set(ds.form["team_id"].astype(str))
+        assert present.isdisjoint(set(cov["form"]["missing"]))
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

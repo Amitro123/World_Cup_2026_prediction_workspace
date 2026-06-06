@@ -46,6 +46,13 @@ FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
 DC_RHO = -0.06       # Dixon-Coles low-score dependence
 HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
 EXPERT_W = 0.55      # weight on the model vs an expert scoreline target
+
+# --- Host nations (World Cup 2026 co-hosts) ----------------------------------
+# 2026 is played across the USA, Mexico and Canada, so *every* match is at a
+# neutral venue for the visiting teams EXCEPT when a host nation plays at home —
+# there a real crowd advantage applies. Group games are therefore treated as
+# neutral unless the home_id is one of these three; knockout games stay neutral.
+HOSTS = frozenset({"USA", "MEX", "CAN"})
 MIN_LAMBDA = 0.18    # floor on any expected-goals value
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
@@ -439,12 +446,14 @@ class ProbabilityModel:
         minute: int,
         home_goals: int,
         away_goals: int,
+        neutral: bool = False,
         expert: tuple[float, float] | None = None,
         h2h_sup: float = 0.0,
         form_sup: float = 0.0,
     ) -> dict[str, float]:
         lam_h, lam_a = expected_goals(
-            rating_home, rating_away, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup
+            rating_home, rating_away, neutral=neutral, expert=expert,
+            h2h_sup=h2h_sup, form_sup=form_sup,
         )
         remaining = max(0.0, (90 - minute) / 90.0)
         out = _grid_probs(
