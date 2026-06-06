@@ -460,6 +460,51 @@ bracket = knockout.simulate_detail(ds, seed=42)
 
 ---
 
+## Model Reliability / Backtesting
+
+A prediction model is only trustworthy once it is scored against *known*
+results. `src/backtest.py` runs the **exact same `ProbabilityModel`**
+retrospectively over the **2022 World Cup** (`data/backtest_2022.csv` — 64 real
+matches with October-2022 FIFA points; the whole tournament was at neutral
+venues, so this isolates pure strength prediction with no home-advantage
+confound). Penalty-shootout knockouts are recorded as their 90'/120' draw, since
+the model predicts the regulation outcome, not the shootout.
+
+It reports standard forecasting metrics and compares them to naive baselines so
+the numbers have context:
+
+| Metric | Meaning | Better |
+|--------|---------|--------|
+| **Brier score** | Mean squared error of the H/D/A probability vector | Lower (0 = perfect, 0.667 = always-uniform) |
+| **Log loss** | Penalises confident wrong calls harshly | Lower |
+| **Accuracy** | Share where the model's favourite was the result | Higher |
+| **Calibration** | When it says "60%", does it happen ~60%? | Gap → 0 |
+
+```bash
+python -m src.backtest          # human-readable report
+python -m src.backtest --json   # structured output
+```
+
+```python
+from src import backtest
+rep = backtest.run()                       # full report dict
+m   = backtest.evaluate(backtest.load())   # Metrics(brier, log_loss, accuracy, ...)
+backtest.sweep(backtest.load(), "K", [180, 200, 220])   # tune a constant by measurement
+```
+
+On the shipped 2022 data the model scores **Brier ≈ 0.587 / Log-loss ≈ 1.009**,
+about **+12%** better than blind 1/3 guessing and **+8%** better than knowing
+only the base rate — i.e. it has genuine, measured skill, not just plausible
+output. The `K` sweep confirms the current `K = 200` is near-optimal (best Brier
+sits at `K ≈ 180–200`). The dashboard exposes all of this under the **"אמינות
+המודל"** (Model Reliability) view, including the calibration curve.
+
+To validate a different tournament, drop a CSV with the same schema (`date, home,
+away, rating_home, rating_away, home_goals, away_goals, neutral, stage`) and pass
+`--csv path` (or `backtest.run("path")`).
+
+---
+
 ## UI Status Icons
 
 | Icon | Meaning |
@@ -532,8 +577,9 @@ graph TD
 Lightweight self-checking scripts live in `tests/` and can be run directly:
 
 ```bash
-python tests/test_h2h.py     # head-to-head signal + agent path
-python tests/test_form.py    # momentum / recent-form signal + agent path
+python tests/test_h2h.py       # head-to-head signal + agent path
+python tests/test_form.py      # momentum / recent-form signal + agent path
+python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
 ```
 
 Each prints PASS/FAIL per check and asserts on failure (also runnable under

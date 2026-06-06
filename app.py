@@ -11,7 +11,7 @@ import subprocess
 import pandas as pd
 import streamlit as st
 
-from src import bonus, engine, knockout
+from src import backtest, bonus, engine, knockout
 from src.models import DataStore
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -82,7 +82,7 @@ st.sidebar.title("מונדיאל 2026 ⚽")
 view = st.sidebar.radio(
     "תצוגה",
     ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט",
-     "בראקט מסומלץ", "שאלות בונוס"],
+     "בראקט מסומלץ", "שאלות בונוס", "אמינות המודל"],
 )
 st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
 
@@ -438,3 +438,62 @@ elif view == "שאלות בונוס":
         if b["top_assists"].get("table"):
             st.dataframe(pd.DataFrame(b["top_assists"]["table"]), use_container_width=True, hide_index=True)
         st.markdown(f"**אמבפה vs ויניסיוס → {b['mbappe_vs_vinicius']['answer']}** ⚠️ — {b['mbappe_vs_vinicius']['note']}")
+
+
+# --- view: backtest / model reliability --------------------------------------
+elif view == "אמינות המודל":
+    st.header("אמינות המודל — בקטסט מונדיאל 2022")
+    st.caption(
+        "אותו מנוע הסתברויות מורץ רטרוספקטיבית על 64 משחקי מונדיאל 2022 (תוצאות "
+        "אמת + נקודות FIFA מאוקטובר 2022, מגרש ניטרלי). כך בודקים אם המודל מכויל: "
+        "ככל שה-Brier וה-Log-loss נמוכים יותר — טוב יותר. הכרעות בפנדלים נרשמות "
+        "כתיקו ב-90 דק' (המודל חוזה זמן חוקי, לא דו-קרב פנדלים)."
+    )
+
+    rep = backtest.run()
+    m = rep["model"]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Brier (מודל)", f"{m['brier']:.3f}",
+              help="שגיאה ריבועית של וקטור ההסתברות. נמוך = טוב. 0.667 = ניחוש אחיד.")
+    c2.metric("Log-loss", f"{m['log_loss']:.3f}",
+              help="קונס בחומרה ניבוי בטוח ושגוי. נמוך = טוב.")
+    c3.metric("דיוק (פגיעה בפייבוריט)", f"{m['accuracy']:.1%}")
+    c4.metric("יתרון על ניחוש אחיד", f"{rep['skill_vs_uniform']:+.1%}",
+              help="כמה ה-Brier טוב יותר מ-1/3-1/3-1/3. חיובי = המודל לומד.")
+
+    st.subheader("השוואה ל-baselines")
+    base_rows = [{"שיטה": "המודל שלנו", **m}]
+    for name_he, key in [("ניחוש אחיד (1/3)", "uniform"), ("שכיחות בסיס", "base_rate")]:
+        b = rep["baselines"][key]
+        base_rows.append({"שיטה": name_he, "n": b["n"], "brier": b["brier"],
+                          "log_loss": b["log_loss"], "accuracy": b["accuracy"]})
+    bt = pd.DataFrame(base_rows)[["שיטה", "n", "brier", "log_loss", "accuracy"]]
+    bt.columns = ["שיטה", "מס' משחקים", "Brier", "Log-loss", "דיוק"]
+    st.dataframe(bt, use_container_width=True, hide_index=True)
+    st.markdown(
+        f"המודל טוב ב-**{rep['skill_vs_uniform']:+.1%}** מניחוש אחיד ו-"
+        f"**{rep['skill_vs_base_rate']:+.1%}** משכיחות הבסיס (חיובי = עדיף)."
+    )
+
+    st.subheader("כיול (Calibration)")
+    st.caption("כשהמודל אומר '60%' — האם זה קורה בערך ב-60% מהמקרים? "
+               "פער חיובי = המודל זהיר מדי; שלילי = בטוח מדי. מקובץ על H/D/A.")
+    cal = pd.DataFrame(rep["calibration"])
+    cal.columns = ["טווח חזוי", "n", "ממוצע חזוי", "תדירות בפועל", "פער"]
+    st.dataframe(cal, use_container_width=True, hide_index=True)
+    try:
+        chart = cal.set_index("טווח חזוי")[["ממוצע חזוי", "תדירות בפועל"]]
+        st.line_chart(chart)
+    except Exception:
+        pass
+
+    st.subheader("כיול פרמטר K (נקודות FIFA לכל שער עליונות)")
+    st.caption("מריצים את הבקטסט על ערכי K שונים — מי שממזער את ה-Brier מכויל "
+               "הכי טוב לנתונים ההיסטוריים. כך מחליטים לפי מדידה ולא לפי דעה.")
+    ks = pd.DataFrame(rep["k_sweep"])
+    best_k = min(rep["k_sweep"], key=lambda r: r["brier"])["K"]
+    ks.columns = ["K", "Brier", "Log-loss", "דיוק"]
+    st.dataframe(ks, use_container_width=True, hide_index=True)
+    st.markdown(f"ה-K הממזער את ה-Brier: **{best_k}** "
+                f"(הערך הנוכחי במנוע: **{engine.K:.0f}**).")
