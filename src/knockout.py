@@ -82,7 +82,9 @@ def simulate_group(ds, group_id, ratings, rng):
         if str(m.status) == "finished" and pd.notna(m.home_goals):
             hg, ag = int(m.home_goals), int(m.away_goals)
         else:
-            hg, ag = engine.sample_score(ratings[h], ratings[a], rng)
+            hg, ag = engine.sample_score(
+                ratings[h], ratings[a], rng, expert=ds.expert_for(m.match_id)
+            )
         rec[h]["gf"] += hg; rec[h]["ga"] += ag
         rec[a]["gf"] += ag; rec[a]["ga"] += hg
         if hg > ag:
@@ -172,7 +174,7 @@ def _play_detail(rh, ra, rng, neutral=True):
 def simulate_detail(ds, seed: int | None = None) -> dict:
     """Simulate the tournament ONCE and return the full bracket with scores."""
     rng = random.Random(seed)
-    ratings = dict(zip(ds.teams.team_id, ds.teams.power_rating))
+    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
 
     pos, group_thirds, standings = {}, [], {}
     for g in ds.groups.group_id:
@@ -237,7 +239,7 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
 def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
     """Run the Monte-Carlo and return a probability table sorted by title odds."""
     rng = random.Random(seed)
-    ratings = dict(zip(ds.teams.team_id, ds.teams.power_rating))
+    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
     counts = {
         t: {"knockout": 0, "r16": 0, "qf": 0, "sf": 0, "final": 0, "title": 0}
         for t in ds.teams.team_id

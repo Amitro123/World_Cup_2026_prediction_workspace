@@ -55,9 +55,9 @@ def team(tid: str) -> str:
 st.sidebar.title("מונדיאל 2026 ⚽")
 view = st.sidebar.radio(
     "תצוגה",
-    ["משחקים", "משחק חי", "סקירת טורניר", "סימולציית נוקאאוט", "בראקט מסומלץ"],
+    ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט", "בראקט מסומלץ"],
 )
-st.sidebar.caption("מודל הסתברות: פואסון מבוסס דירוגי כוח (נגזרים מיחסי ההימורים).")
+st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
 
 
 # --- view: fixtures ----------------------------------------------------------
@@ -129,6 +129,96 @@ elif view == "משחק חי":
     if st.button("💾 שמור מצב משחק לקובץ"):
         ds.save_matches()
         st.success("נשמר ל-matches.csv")
+
+
+# --- view: Hermes news adjustments ------------------------------------------
+elif view == "עדכוני Hermes":
+    st.header("עדכוני Hermes — חדשות לפני משחק")
+    st.caption(
+        "סוכן Hermes (רץ ב-Telegram) סורק אתרי הימורים, חדשות ספורט ופיפ\"א "
+        "ומזין כאן עדכונים לפני המשחק (פציעות, שינויי הרכב, תזוזות בקו ההימורים). "
+        "המודל מחשב מחדש את ההסתברויות ומפיק המלצה אם הניחוש שלך מושפע."
+    )
+
+    labels = {
+        f"{m.group_id} | {team(m.home_id)} - {team(m.away_id)}": m.match_id
+        for _, m in ds.matches.iterrows()
+    }
+    chosen = st.selectbox("בחר משחק", list(labels.keys()))
+    mid = labels[chosen]
+    m = ds.match(mid)
+
+    b = ds.match_briefing(mid)
+    st.subheader(f"{team(m.home_id)} מול {team(m.away_id)}")
+
+    cols = st.columns(3)
+    keys = [("H", f"ניצחון {team(m.home_id)}"), ("D", "תיקו"), ("A", f"ניצחון {team(m.away_id)}")]
+    for col, (k, lab) in zip(cols, keys):
+        base_p = b["base"][k] * 100
+        adj_p = b["adjusted"][k] * 100
+        col.metric(lab, f"{adj_p:.1f}%", f"{adj_p - base_p:+.1f}% מהבסיס")
+
+    if b["recommendation"]:
+        if "⚠️" in b["recommendation"]:
+            st.warning(b["recommendation"])
+        else:
+            st.info(b["recommendation"])
+
+    if b["notes"]:
+        st.markdown("**עדכונים פעילים למשחק זה:**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "נבחרת": team(n["team_id"]),
+                        "סוג": n["kind"],
+                        "ערך": n["value"],
+                        "הערה": n["note_he"],
+                        "מקור": n["source"],
+                    }
+                    for n in b["notes"]
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.caption("אין עדכוני חדשות פעילים למשחק זה.")
+
+    st.divider()
+    with st.expander("➕ הוספת עדכון ידני (בדיקה / שימוש ללא Hermes)"):
+        cc = st.columns(2)
+        side = cc[0].selectbox(
+            "נבחרת מושפעת", [m.home_id, m.away_id],
+            format_func=lambda t: team(t),
+        )
+        kind = cc[1].selectbox(
+            "סוג עדכון",
+            ["rating_delta", "lambda_mult", "info"],
+            format_func={
+                "rating_delta": "שינוי דירוג (נק' פיפ\"א)",
+                "lambda_mult": "מכפיל תוחלת שערים",
+                "info": "מידע בלבד",
+            }.get,
+        )
+        default_val = -60.0 if kind == "rating_delta" else (1.0 if kind == "lambda_mult" else 0.0)
+        value = st.number_input("ערך", value=default_val, step=1.0 if kind == "rating_delta" else 0.05)
+        note = st.text_input("הערה (עברית)", "")
+        source = st.text_input("מקור", "ידני")
+        if st.button("שמור עדכון"):
+            ds.add_news_adjustment(mid, side, kind, float(value), note, source)
+            st.success("נשמר ל-news_adjustments.csv — רענן את הדף לראות את ההשפעה.")
+
+    active = ds.active_adjustments(mid)
+    if not active.empty:
+        st.divider()
+        st.markdown("**ניהול עדכונים פעילים:**")
+        for a in active.itertuples():
+            c = st.columns([5, 1])
+            c[0].write(f"`{a.adj_id}` · {team(a.team_id)} · {a.kind}={a.value} · {a.note_he}")
+            if c[1].button("בטל", key=f"del_{a.adj_id}"):
+                ds.deactivate_adjustment(a.adj_id)
+                st.rerun()
 
 
 # --- view: tournament overview ----------------------------------------------

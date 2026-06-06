@@ -1,49 +1,49 @@
-team_id,name_he,name_en,group_id,confederation,group_winner_odds,tier,power_rating
-MEX,מקסיקו,Mexico,A,CONCACAF,-140,3,58.33
-CZE,צ'כיה,Czechia,A,UEFA,300,3,25.0
-KOR,דרום קוריאה,South Korea,A,AFC,360,4,21.74
-RSA,דרום אפריקה,South Africa,A,CAF,1200,4,7.69
-SUI,שווייץ,Switzerland,B,UEFA,-130,3,56.52
-CAN,קנדה,Canada,B,CONCACAF,175,3,36.36
-BIH,בוסניה והרצגובינה,Bosnia and Herzegovina,B,UEFA,450,3,18.18
-QAT,קטר,Qatar,B,AFC,3500,4,2.78
-BRA,ברזיל,Brazil,C,CONMEBOL,-350,1,77.78
-MAR,מרוקו,Morocco,C,CAF,350,2,22.22
-SCO,סקוטלנד,Scotland,C,UEFA,950,3,9.52
-HAI,האיטי,Haiti,C,CONCACAF,15000,4,0.66
-USA,"ארה""ב",United States,D,CONCACAF,130,3,43.48
-TUR,טורקיה,Turkey,D,UEFA,180,3,35.71
-PAR,פרגוואי,Paraguay,D,CONMEBOL,400,3,20.0
-AUS,אוסטרליה,Australia,D,AFC,800,4,11.11
-GER,גרמניה,Germany,E,UEFA,-300,2,75.0
-ECU,אקוודור,Ecuador,E,CONMEBOL,340,3,22.73
-CIV,חוף השנהב,Ivory Coast,E,CAF,600,3,14.29
-CUW,קוראסאו,Curacao,E,CONCACAF,17500,4,0.57
-NED,הולנד,Netherlands,F,UEFA,-130,2,56.52
-JPN,יפן,Japan,F,AFC,280,3,26.32
-SWE,שוודיה,Sweden,F,UEFA,460,3,17.86
-TUN,תוניסיה,Tunisia,F,CAF,1200,4,7.69
-BEL,בלגיה,Belgium,G,UEFA,-240,2,70.59
-EGY,מצרים,Egypt,G,CAF,400,3,20.0
-IRN,איראן,Iran,G,AFC,800,4,11.11
-NZL,ניו זילנד,New Zealand,G,OFC,2000,4,4.76
-ESP,ספרד,Spain,H,UEFA,-450,1,81.82
-URU,אורוגוואי,Uruguay,H,CONMEBOL,420,2,19.23
-KSA,ערב הסעודית,Saudi Arabia,H,AFC,4000,4,2.44
-CPV,כף ורדה,Cape Verde,H,CAF,6500,4,1.52
-FRA,צרפת,France,I,UEFA,-300,1,75.0
-SEN,סנגל,Senegal,I,CAF,350,3,22.22
-NOR,נורבגיה,Norway,I,UEFA,400,2,20.0
-IRQ,עיראק,Iraq,I,AFC,6000,4,1.64
-ARG,ארגנטינה,Argentina,J,CONMEBOL,-250,1,71.43
-AUT,אוסטריה,Austria,J,UEFA,370,3,21.28
-ALG,אלג'יריה,Algeria,J,CAF,800,3,11.11
-JOR,ירדן,Jordan,J,AFC,5000,4,1.96
-POR,פורטוגל,Portugal,K,UEFA,-215,1,68.25
-COL,קולומביה,Colombia,K,CONMEBOL,240,2,29.41
-COD,DR קונגו,DR Congo,K,CAF,1400,4,6.67
-UZB,אוזבקיסטן,Uzbekistan,K,AFC,3500,4,2.78
-ENG,אנגליה,England,L,UEFA,-280,1,73.68
-CRO,קרואטיה,Croatia,L,UEFA,340,3,22.73
-GHA,גאנה,Ghana,L,CAF,1100,3,8.33
-PAN,פנמה,Panama,L,CONCACAF,4000,4,2.44
+team_id,name_he,name_en,group_id,confederation,group_winner_odds,tier,power_rating,fifa_points
+MEX,מקסיקו,Mexico,A,CONCACAF,-140,3,67.05,1681.0
+CZE,צ'כיה,Czechia,A,UEFA,300,3,36.9,1501.4
+KOR,דרום קוריאה,South Korea,A,AFC,360,4,51.55,1588.7
+RSA,דרום אפריקה,South Africa,A,CAF,1200,4,24.86,1429.7
+SUI,שווייץ,Switzerland,B,UEFA,-130,3,61.74,1649.4
+CAN,קנדה,Canada,B,CONCACAF,175,3,46.15,1556.5
+BIH,בוסניה והרצגובינה,Bosnia and Herzegovina,B,UEFA,450,3,17.49,1385.8
+QAT,קטר,Qatar,B,AFC,3500,4,29.11,1455.0
+BRA,ברזיל,Brazil,C,CONMEBOL,-350,1,80.51,1761.2
+MAR,מרוקו,Morocco,C,CAF,350,2,79.62,1755.9
+SCO,סקוטלנד,Scotland,C,UEFA,950,3,36.38,1498.3
+HAI,האיטי,Haiti,C,CONCACAF,15000,4,1.7,1291.7
+USA,"ארה""ב",United States,D,CONCACAF,130,3,65.72,1673.1
+TUR,טורקיה,Turkey,D,UEFA,180,3,53.28,1599.0
+PAR,פרגוואי,Paraguay,D,CONMEBOL,400,3,37.25,1503.5
+AUS,אוסטרליה,Australia,D,AFC,800,4,50.21,1580.7
+GER,גרמניה,Germany,E,UEFA,-300,2,75.34,1730.4
+ECU,אקוודור,Ecuador,E,CONMEBOL,340,3,52.58,1594.8
+CIV,חוף השנהב,Ivory Coast,E,CAF,600,3,42.2,1533.0
+CUW,קוראסאו,Curacao,E,CONCACAF,17500,4,2.2,1294.7
+NED,הולנד,Netherlands,F,UEFA,-130,2,79.96,1757.9
+JPN,יפן,Japan,F,AFC,280,3,63.59,1660.4
+SWE,שוודיה,Sweden,F,UEFA,460,3,39.15,1514.8
+TUN,תוניסיה,Tunisia,F,CAF,1200,4,33.81,1483.0
+BEL,בלגיה,Belgium,G,UEFA,-240,2,76.06,1734.7
+EGY,מצרים,Egypt,G,CAF,400,3,47.27,1563.2
+IRN,איראן,Iran,G,AFC,800,4,56.02,1615.3
+NZL,ניו זילנד,New Zealand,G,OFC,2000,4,0.0,1281.6
+ESP,ספרד,Spain,H,UEFA,-450,1,99.85,1876.4
+URU,אורוגוואי,Uruguay,H,CONMEBOL,420,2,65.72,1673.1
+KSA,ערב הסעודית,Saudi Arabia,H,AFC,4000,4,23.47,1421.4
+CPV,כף ורדה,Cape Verde,H,CAF,6500,4,14.18,1366.1
+FRA,צרפת,France,I,UEFA,-300,1,100.0,1877.3
+SEN,סנגל,Senegal,I,CAF,350,3,68.39,1689.0
+NOR,נורבגיה,Norway,I,UEFA,400,2,45.21,1550.9
+IRQ,עיראק,Iraq,I,AFC,6000,4,27.78,1447.1
+ARG,ארגנטינה,Argentina,J,CONMEBOL,-250,1,99.58,1874.8
+AUT,אוסטריה,Austria,J,UEFA,370,3,52.36,1593.5
+ALG,אלג'יריה,Algeria,J,CAF,800,3,47.46,1564.3
+JOR,ירדן,Jordan,J,AFC,5000,4,18.45,1391.5
+POR,פורטוגל,Portugal,K,UEFA,-215,1,80.95,1763.8
+COL,קולומביה,Colombia,K,CONMEBOL,240,2,69.08,1693.1
+COD,DR קונגו,DR Congo,K,CAF,1400,4,33.02,1478.3
+UZB,אוזבקיסטן,Uzbekistan,K,AFC,3500,4,30.84,1465.3
+ENG,אנגליה,England,L,UEFA,-280,1,91.39,1826.0
+CRO,קרואטיה,Croatia,L,UEFA,340,3,73.11,1717.1
+GHA,גאנה,Ghana,L,CAF,1100,3,10.86,1346.3
+PAN,פנמה,Panama,L,CONCACAF,4000,4,43.48,1540.6
