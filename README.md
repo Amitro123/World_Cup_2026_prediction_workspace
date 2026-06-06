@@ -513,6 +513,22 @@ output. The `K` sweep confirms the current `K = 200` is near-optimal (best Brier
 sits at `K ≈ 180–200`). The dashboard exposes all of this under the **"אמינות
 המודל"** (Model Reliability) view, including the calibration curve.
 
+### FIFA vs Elo (CR recommendation, measured)
+
+The review's top suggestion was to blend Elo into the strength input. Rather than
+assume it helps, `backtest.elo_sweep` measures it: `data/backtest_2022.csv`
+carries Elo columns (Nov-2022 eloratings.net, approximate) and the engine can
+z-score-blend FIFA + Elo (`engine.blend_strength`, weight `engine.ELO_WEIGHT`).
+
+Result on 2022: a FIFA/Elo blend at `w ≈ 0.4` gives the best Brier (≈ 0.586 vs
+0.587 pure FIFA) and one extra correct match — a **marginal, ~0.3% improvement**
+that does not improve log-loss, on a single 64-match tournament with approximate
+Elo. That is too weak to justify changing the default (the same anti-overfit
+discipline applied to `K`), so **`ELO_WEIGHT` ships at `0.0` (pure FIFA)**. The
+full capability is wired and gated: add an `elo_points` column to `teams.csv` and
+raise `engine.ELO_WEIGHT` to enable the blend in production — no code change
+needed. Revisit with verified, multi-tournament Elo data.
+
 To validate a different tournament, drop a CSV with the same schema (`date, home,
 away, rating_home, rating_away, home_goals, away_goals, neutral, stage`) and pass
 `--csv path` (or `backtest.run("path")`).
@@ -595,6 +611,7 @@ python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
 python tests/test_integrity.py # shootout cap + schema validation
+python tests/test_elo.py       # FIFA/Elo blend + production gate
 ```
 
 Each prints PASS/FAIL per check and asserts on failure (also runnable under

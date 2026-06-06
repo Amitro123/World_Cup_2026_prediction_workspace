@@ -507,3 +507,25 @@ elif view == "אמינות המודל":
     st.dataframe(ks, use_container_width=True, hide_index=True)
     st.markdown(f"ה-K הממזער את ה-Brier: **{best_k}** "
                 f"(הערך הנוכחי במנוע: **{engine.K:.0f}**).")
+
+    if rep.get("elo_sweep"):
+        st.subheader("שילוב Elo מול FIFA (המלצת ה-CR)")
+        st.caption("בדיקה אובייקטיבית האם דירוג Elo משפר על נקודות FIFA: "
+                   "w=0.0 = FIFA טהור (המודל הנוכחי), w=1.0 = Elo טהור. "
+                   "מאמצים רק אם ה-Brier יורד.")
+        es = pd.DataFrame(rep["elo_sweep"])
+        best_e = min(rep["elo_sweep"], key=lambda r: r["brier"])
+        es.columns = ["משקל Elo", "Brier", "Log-loss", "דיוק"]
+        st.dataframe(es, use_container_width=True, hide_index=True)
+        if best_e["elo_weight"] > 0:
+            base_b = next(r["brier"] for r in rep["elo_sweep"] if r["elo_weight"] == 0.0)
+            gain = (base_b - best_e["brier"]) / base_b
+            st.markdown(
+                f"ה-Brier הטוב ביותר ב-**w={best_e['elo_weight']:.1f}** "
+                f"(שיפור של **{gain:+.1%}** מ-FIFA טהור) — שיפור **זעיר** על טורניר "
+                f"בודד. לכן `ELO_WEIGHT` נשאר **{engine.ELO_WEIGHT:.1f}** (כבוי) עד "
+                f"שתהיה דאטת Elo מאומתת מכמה טורנירים. ה-plumbing מוכן: הוסף עמודת "
+                f"`elo_points` ל-teams.csv והעלה את `engine.ELO_WEIGHT`."
+            )
+        else:
+            st.markdown("FIFA טהור מנצח — `ELO_WEIGHT` נשאר 0.")

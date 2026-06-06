@@ -49,6 +49,43 @@ EXPERT_W = 0.55      # weight on the model vs an expert scoreline target
 MIN_LAMBDA = 0.18    # floor on any expected-goals value
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
+# --- Optional Elo blend ------------------------------------------------------
+# FIFA points are the default strength input. A second source (World Football Elo)
+# can be blended in: ELO_WEIGHT is the share given to Elo, 1-ELO_WEIGHT to FIFA.
+# Elo and FIFA live on different scales, so we blend in z-score space and map the
+# result back onto the FIFA scale — that way the engine's K / FIFA_MEAN constants
+# stay valid and ELO_WEIGHT=0.0 reproduces the pure-FIFA model exactly. The value
+# is 0.0 by default and only raised if a backtest shows it lowers the Brier score.
+ELO_WEIGHT = 0.0
+
+
+def blend_strength(
+    fifa: float,
+    elo: float,
+    weight: float,
+    fifa_mean: float,
+    fifa_std: float,
+    elo_mean: float,
+    elo_std: float,
+) -> float:
+    """Blend a FIFA rating with an Elo rating, expressed back in FIFA units.
+
+    weight=0 -> pure FIFA (unchanged); weight=1 -> Elo mapped onto FIFA's
+    mean/spread. Both are converted to z-scores against their own population so
+    the blend is scale-free, then rescaled to the FIFA distribution so downstream
+    constants (K, FIFA_MEAN) keep their meaning. Falls back to FIFA if Elo is
+    missing or a std is degenerate.
+    """
+    if weight <= 0 or elo is None or elo != elo:  # NaN-safe
+        return fifa
+    if fifa_std <= 0 or elo_std <= 0:
+        return fifa
+    zf = (fifa - fifa_mean) / fifa_std
+    ze = (elo - elo_mean) / elo_std
+    z = (1.0 - weight) * zf + weight * ze
+    return fifa_mean + fifa_std * z
+
+
 # Knockout draws go to extra time + penalties. The stronger team keeps a real but
 # LIMITED edge there: shootouts in particular are close to a coin flip regardless
 # of the skill gap. We therefore resolve a knockout draw proportionally to win

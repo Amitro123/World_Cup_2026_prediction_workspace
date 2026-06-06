@@ -190,10 +190,46 @@ class DataStore:
             return team_id
         return row.iloc[0]["name_he" if lang == "he" else "name_en"]
 
+    def _strength_stats(self) -> dict | None:
+        """Population mean/std of FIFA and Elo across all teams, for the blend.
+
+        Returns None unless teams.csv has an `elo_points` column, so the blend is
+        purely opt-in (add the column + raise engine.ELO_WEIGHT to enable it).
+        Cached on first use.
+        """
+        if "elo_points" not in self.teams.columns:
+            return None
+        cached = getattr(self, "_stats_cache", None)
+        if cached is not None:
+            return cached
+        fifa = self.teams["fifa_points"].astype(float)
+        elo = self.teams["elo_points"].astype(float)
+        stats = {
+            "fifa_mean": float(fifa.mean()), "fifa_std": float(fifa.std(ddof=0)),
+            "elo_mean": float(elo.mean()), "elo_std": float(elo.std(ddof=0)),
+        }
+        object.__setattr__(self, "_stats_cache", stats)
+        return stats
+
     def team_rating(self, team_id: str) -> float:
-        """FIFA ranking points (the engine's strength input)."""
+        """The engine's strength input — FIFA points, optionally blended with Elo.
+
+        Pure FIFA by default. If teams.csv has an `elo_points` column AND
+        engine.ELO_WEIGHT > 0, the rating is a z-score blend of FIFA and Elo
+        (see engine.blend_strength). Backtest evidence on 2022 showed only a
+        marginal gain, so ELO_WEIGHT ships at 0.0; this wiring lets you enable it
+        without code changes once you have verified Elo data.
+        """
         row = self.teams.loc[self.teams.team_id == team_id]
-        return float(row.iloc[0]["fifa_points"]) if not row.empty else engine.FIFA_MEAN
+        if row.empty:
+            return engine.FIFA_MEAN
+        fifa = float(row.iloc[0]["fifa_points"])
+        if engine.ELO_WEIGHT > 0:
+            stats = self._strength_stats()
+            if stats is not None and "elo_points" in row.columns:
+                elo = float(row.iloc[0]["elo_points"])
+                return engine.blend_strength(fifa, elo, engine.ELO_WEIGHT, **stats)
+        return fifa
 
     def match(self, match_id: str) -> pd.Series:
         return self.matches.loc[self.matches.match_id == match_id].iloc[0]

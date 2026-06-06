@@ -68,12 +68,52 @@ def _clip(p: float, eps: float = 1e-12) -> float:
     return min(1.0 - eps, max(eps, p))
 
 
-def predict_row(row, model: engine.ProbabilityModel) -> dict[str, float]:
-    """Pre-match H/D/A probabilities for one historical match row."""
+def _mean_std(vals) -> tuple[float, float]:
+    vals = [float(v) for v in vals]
+    n = len(vals)
+    if n == 0:
+        return 0.0, 0.0
+    mu = sum(vals) / n
+    var = sum((v - mu) ** 2 for v in vals) / n
+    return mu, var ** 0.5
+
+
+def team_stats(df: pd.DataFrame) -> dict | None:
+    """Population mean/std of FIFA and Elo across the distinct teams in df.
+
+    Returns None if the frame has no `elo_home`/`elo_away` columns (so the blend
+    is simply unavailable and callers fall back to pure FIFA).
+    """
+    if "elo_home" not in df.columns or "elo_away" not in df.columns:
+        return None
+    fifa: dict[str, float] = {}
+    elo: dict[str, float] = {}
+    for _, r in df.iterrows():
+        fifa[r["home"]] = float(r["rating_home"]); elo[r["home"]] = float(r["elo_home"])
+        fifa[r["away"]] = float(r["rating_away"]); elo[r["away"]] = float(r["elo_away"])
+    fmu, fsd = _mean_std(fifa.values())
+    emu, esd = _mean_std(elo.values())
+    return {"fifa_mean": fmu, "fifa_std": fsd, "elo_mean": emu, "elo_std": esd}
+
+
+def predict_row(
+    row,
+    model: engine.ProbabilityModel,
+    elo_weight: float = 0.0,
+    stats: dict | None = None,
+) -> dict[str, float]:
+    """Pre-match H/D/A probabilities for one historical match row.
+
+    elo_weight>0 blends the row's Elo into the FIFA rating (needs `stats` from
+    `team_stats`); 0 uses pure FIFA, reproducing the production model.
+    """
     neutral = bool(int(row.get("neutral", 1)))
-    probs = model.pre_match(
-        float(row["rating_home"]), float(row["rating_away"]), neutral=neutral
-    )
+    rh = float(row["rating_home"])
+    ra = float(row["rating_away"])
+    if elo_weight > 0 and stats is not None and "elo_home" in row:
+        rh = engine.blend_strength(rh, float(row["elo_home"]), elo_weight, **stats)
+        ra = engine.blend_strength(ra, float(row["elo_away"]), elo_weight, **stats)
+    probs = model.pre_match(rh, ra, neutral=neutral)
     return {o: probs[_PROB_KEY[o]] for o in OUTCOMES}
 
 
@@ -81,13 +121,16 @@ def evaluate(
     df: pd.DataFrame,
     model: engine.ProbabilityModel | None = None,
     overrides: dict | None = None,
+    elo_weight: float = 0.0,
 ) -> Metrics:
     """Score the model over a historical-match frame.
 
     overrides: temporarily patch engine constants (e.g. {"K": 240}) for the
     duration of this call, then restore them — used by `sweep`.
+    elo_weight: share given to Elo in a FIFA/Elo blend (0 = pure FIFA).
     """
     model = model or engine.ProbabilityModel()
+    stats = team_stats(df) if elo_weight > 0 else None
     saved = {}
     if overrides:
         for name, val in overrides.items():
@@ -103,7 +146,7 @@ def evaluate(
         cls_sum = {o: 0.0 for o in OUTCOMES}
         for _, row in df.iterrows():
             actual = engine.outcome_from_score(int(row["home_goals"]), int(row["away_goals"]))
-            p = predict_row(row, model)
+            p = predict_row(row, model, elo_weight=elo_weight, stats=stats)
             for o in OUTCOMES:
                 y = 1.0 if o == actual else 0.0
                 d2 = (p[o] - y) ** 2
@@ -204,6 +247,28 @@ def calibration_table(
     return table
 
 
+def elo_sweep(
+    df: pd.DataFrame,
+    weights=(0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0),
+    model: engine.ProbabilityModel | None = None,
+) -> list[dict]:
+    """Re-score across FIFA/Elo blend weights to test whether Elo helps.
+
+    weight=0 is the production (pure-FIFA) model; weight=1 is pure Elo. The CR
+    claims Elo is more predictive — this measures it instead of assuming it. If
+    no weight beats 0.0 on Brier, FIFA alone wins and we keep it.
+    """
+    if team_stats(df) is None:
+        return []  # dataset has no Elo columns
+    rows = []
+    for w in weights:
+        m = evaluate(df, model=model, elo_weight=w)
+        rows.append({"elo_weight": w, "brier": round(m.brier, 4),
+                     "log_loss": round(m.log_loss, 4),
+                     "accuracy": round(m.accuracy, 4)})
+    return rows
+
+
 def sweep(
     df: pd.DataFrame,
     param: str,
@@ -243,6 +308,7 @@ def run(csv_path: str | None = None) -> dict:
         "skill_vs_base_rate": round(1 - m.brier / base["base_rate"].brier, 4),
         "calibration": calibration_table(df, model),
         "k_sweep": sweep(df, "K", [160, 180, 200, 220, 240, 260]),
+        "elo_sweep": elo_sweep(df),
     }
 
 
@@ -270,6 +336,17 @@ def _print_report(rep: dict) -> None:
         flag = "  <- best Brier" if r is best else ""
         print(f"  K={r['K']:>4}  Brier={r['brier']:.4f}  "
               f"LogLoss={r['log_loss']:.4f}  Acc={r['accuracy']:.3f}{flag}")
+
+    if rep.get("elo_sweep"):
+        print("\nElo blend sweep (0.0 = pure FIFA, 1.0 = pure Elo):")
+        best_e = min(rep["elo_sweep"], key=lambda r: r["brier"])
+        for r in rep["elo_sweep"]:
+            flag = "  <- best Brier" if r is best_e else ""
+            print(f"  w={r['elo_weight']:.1f}  Brier={r['brier']:.4f}  "
+                  f"LogLoss={r['log_loss']:.4f}  Acc={r['accuracy']:.3f}{flag}")
+        verdict = ("Elo blend helps" if best_e["elo_weight"] > 0
+                   else "pure FIFA wins — keep ELO_WEIGHT=0")
+        print(f"  => {verdict}")
     print()
 
 
