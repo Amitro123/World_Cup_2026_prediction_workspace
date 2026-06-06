@@ -6,6 +6,7 @@ Run:  streamlit run app.py
 
 import os
 import random
+import subprocess
 
 import pandas as pd
 import streamlit as st
@@ -44,6 +45,31 @@ def get_store() -> DataStore:
     return DataStore.load(DATA_DIR)
 
 
+def pull_latest() -> tuple[bool, str]:
+    """git pull the latest data Hermes pushed, then clear the cache.
+
+    Returns (ok, message). The dashboard re-reads CSVs on the next run.
+    """
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        result = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return False, "git לא מותקן / לא נמצא ב-PATH"
+    except subprocess.TimeoutExpired:
+        return False, "git pull חרג מהזמן (60 שניות)"
+    out = (result.stdout + result.stderr).strip()
+    if result.returncode != 0:
+        return False, out or "git pull נכשל"
+    get_store.clear()  # drop cached DataStore so fresh CSVs are read
+    return True, out or "עדכון הושלם"
+
+
 ds = get_store()
 
 
@@ -59,6 +85,17 @@ view = st.sidebar.radio(
      "בראקט מסומלץ", "שאלות בונוס"],
 )
 st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
+
+st.sidebar.divider()
+if st.sidebar.button("🔄 רענן נתונים", use_container_width=True,
+                     help="מושך מ-GitHub את העדכונים האחרונים של Hermes ומרענן את הלוח"):
+    with st.spinner("מושך עדכונים מ-GitHub…"):
+        ok, msg = pull_latest()
+    if ok:
+        st.sidebar.success("הנתונים עודכנו")
+        st.rerun()
+    else:
+        st.sidebar.error(f"רענון נכשל: {msg}")
 
 
 # --- view: fixtures ----------------------------------------------------------
