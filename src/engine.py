@@ -35,6 +35,7 @@ Assumptions (documented so you can challenge / replace them):
 
 from __future__ import annotations
 
+import datetime as _dt
 import math
 from dataclasses import dataclass
 
@@ -51,13 +52,56 @@ MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 # --- Head-to-head (past meetings) signal ------------------------------------
 # FIFA points already capture most of a team's strength, so H2H is a small,
 # bounded nudge: a team that has historically beaten this specific opponent gets
-# a little extra supremacy. Friendlies count less; older meetings decay; small
-# samples shrink toward zero so a single game barely moves the line.
+# a little extra supremacy. The status of each past meeting is graded (a World Cup
+# final beating means more than a friendly); older meetings decay; small samples
+# shrink toward zero so a single game barely moves the line; and two teams that
+# never met contribute exactly zero.
 H2H_WEIGHT = 0.18         # goals of supremacy per goal of weighted-avg H2H margin
 H2H_CAP = 0.50            # max |supremacy| H2H may contribute (goals)
 H2H_SHRINK = 3.0          # pseudo-count: small samples shrink toward zero
-H2H_FRIENDLY_W = 0.4      # a friendly counts less than a competitive game
 H2H_HALFLIFE_YEARS = 6.0  # recency half-life for down-weighting old meetings
+
+# Weight per match status — a higher-stakes meeting carries more signal than a
+# friendly. Free-text `comp` values are mapped by keyword in `_comp_weight`.
+H2H_COMP_WEIGHTS = {
+    "friendly":    0.40,   # least meaningful — experimental line-ups, low stakes
+    "qualifier":   0.85,   # qualifiers / minor competitive
+    "group":       1.00,   # tournament group stage = baseline competitive
+    "competitive": 1.00,   # generic competitive (unknown stage)
+    "knockout":    1.25,   # round of 32/16, quarter-final — elimination pressure
+    "semifinal":   1.40,   # semi-final
+    "final":       1.50,   # final — the highest-stakes meeting
+}
+H2H_FRIENDLY_W = H2H_COMP_WEIGHTS["friendly"]  # kept for back-compat / readability
+
+
+def _comp_weight(comp) -> float:
+    """Map a meeting's `comp`/stage label to its head-to-head weight.
+
+    Accepts both the canonical keys above and free-text values (e.g. from the
+    web scraper) like 'World Cup semi-final', 'Euro qualifier', 'friendlies'.
+    Order matters: 'semifinal'/'quarterfinal' contain 'final', so check the more
+    specific stage words first. Unknown competitive values fall back to 1.0.
+    """
+    c = str(comp or "").strip().lower()
+    if not c:
+        return H2H_COMP_WEIGHTS["competitive"]
+    if c in H2H_COMP_WEIGHTS:
+        return H2H_COMP_WEIGHTS[c]
+    if c.startswith("f"):                       # friendly / friendlies
+        return H2H_COMP_WEIGHTS["friendly"]
+    if "semi" in c:
+        return H2H_COMP_WEIGHTS["semifinal"]
+    if any(k in c for k in ("quarter", "knockout", "round of", "last 16",
+                            "last 8", "r16", "r32", "play-off", "playoff")):
+        return H2H_COMP_WEIGHTS["knockout"]
+    if "final" in c:                            # plain final (after semi/quarter)
+        return H2H_COMP_WEIGHTS["final"]
+    if "qualif" in c:
+        return H2H_COMP_WEIGHTS["qualifier"]
+    if "group" in c:
+        return H2H_COMP_WEIGHTS["group"]
+    return H2H_COMP_WEIGHTS["competitive"]
 
 # Status thresholds (probability that my pick is still the final outcome)
 ON_TRACK_MIN = 0.55
@@ -101,16 +145,17 @@ def h2h_supremacy(meetings, ref_year: int | None = None) -> float:
 
     meetings: iterable of dicts, each oriented to the home team:
         gd    int  home_goals - away_goals in that past meeting
-        comp  str  'friendly' (down-weighted) or anything else (competitive)
+        comp  str  match status/stage — 'friendly', 'group', 'knockout',
+                   'semifinal', 'final', ... (graded by `_comp_weight`)
         year  int  optional, for recency weighting against ref_year
 
     Returns a bounded supremacy delta in goals (positive favours the home team).
-    Friendlies count less; older games decay; small samples shrink toward zero.
+    Higher-stakes meetings count more; older games decay; small samples shrink
+    toward zero; no meetings -> exactly 0.0 (never-met teams are unaffected).
     """
     num = den = 0.0
     for m in meetings:
-        comp = str(m.get("comp", "")).strip().lower()
-        w = H2H_FRIENDLY_W if comp.startswith("f") else 1.0
+        w = _comp_weight(m.get("comp", ""))
         year = m.get("year")
         if ref_year and year:
             try:
@@ -128,6 +173,118 @@ def h2h_supremacy(meetings, ref_year: int | None = None) -> float:
     return max(-H2H_CAP, min(H2H_CAP, bump))
 
 
+# --- Momentum / recent-form signal ------------------------------------------
+# How a team is ARRIVING at the tournament — its last handful of matches. FIFA
+# points are a slow-moving baseline; momentum captures the recent swing (a team
+# on a winning streak arrives sharper than one limping in on losses). Like H2H it
+# is a small, bounded supremacy nudge: each side gets a form score, and the
+# DIFFERENCE between the two scores nudges supremacy. No recent matches -> the
+# team's form score is exactly 0, so a fixture with no form data is unaffected.
+FORM_WEIGHT = 0.30        # goals of supremacy per unit of form-score difference
+FORM_CAP = 0.35           # max |supremacy| momentum may contribute (goals)
+FORM_SHRINK = 2.5         # pseudo-count: few recent games shrink the score to 0
+FORM_HALFLIFE_DAYS = 180  # recency half-life (~6 months) for down-weighting
+FORM_GD_COEF = 0.25       # how much each goal of margin adds beyond the W/D/L point
+FORM_GD_CAP = 3           # clamp a single result's margin (a 7-0 ≈ a 3-0 for form)
+
+# Weight per match status for FORM. Milder than H2H's friendly penalty: warm-up
+# friendlies are the NORM before a World Cup, so they still carry real signal,
+# while competitive form (qualifiers, AFCON, Nations League) counts a bit more.
+FORM_COMP_WEIGHTS = {
+    "friendly":    0.60,
+    "qualifier":   1.00,
+    "group":       1.00,
+    "competitive": 1.00,
+    "knockout":    1.15,
+    "semifinal":   1.20,
+    "final":       1.25,
+}
+
+
+def _form_comp_weight(comp) -> float:
+    """Map a match's `comp`/stage label to its momentum weight (see _comp_weight)."""
+    c = str(comp or "").strip().lower()
+    if not c:
+        return FORM_COMP_WEIGHTS["competitive"]
+    if c in FORM_COMP_WEIGHTS:
+        return FORM_COMP_WEIGHTS[c]
+    if c.startswith("f"):
+        return FORM_COMP_WEIGHTS["friendly"]
+    if "semi" in c:
+        return FORM_COMP_WEIGHTS["semifinal"]
+    if any(k in c for k in ("quarter", "knockout", "round of", "last 16",
+                            "last 8", "r16", "r32", "play-off", "playoff")):
+        return FORM_COMP_WEIGHTS["knockout"]
+    if "final" in c:
+        return FORM_COMP_WEIGHTS["final"]
+    if "qualif" in c:
+        return FORM_COMP_WEIGHTS["qualifier"]
+    if "group" in c:
+        return FORM_COMP_WEIGHTS["group"]
+    return FORM_COMP_WEIGHTS["competitive"]
+
+
+def _parse_date(value):
+    """Best-effort parse of a YYYY-MM-DD (or YYYY) date string to a date."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y", "%Y"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def form_score(matches, ref_date=None) -> float:
+    """A team's recent-form (momentum) scalar, from its OWN perspective.
+
+    matches: iterable of dicts describing the team's recent games, each oriented
+    to this team:
+        gf    int  goals the team scored
+        ga    int  goals the team conceded
+        comp  str  match status/stage (graded by `_form_comp_weight`)
+        date  str  optional 'YYYY-MM-DD', for recency weighting against ref_date
+
+    Each match contributes a result point (+1 win / 0 draw / -1 loss) plus a
+    capped goal-margin term, recency- and stage-weighted. The weighted average is
+    shrunk toward 0 for small samples. Returns ~[-1.75, 1.75]; no matches -> 0.0
+    (a team with no recent record contributes no momentum, by design).
+    """
+    ref = _parse_date(ref_date) if ref_date else _dt.date.today()
+    num = den = 0.0
+    for m in matches:
+        gf, ga = int(m["gf"]), int(m["ga"])
+        result = 1.0 if gf > ga else (-1.0 if gf < ga else 0.0)
+        margin = max(-FORM_GD_CAP, min(FORM_GD_CAP, gf - ga))
+        value = result + FORM_GD_COEF * margin
+        w = _form_comp_weight(m.get("comp", ""))
+        d = _parse_date(m.get("date"))
+        if ref and d:
+            age_days = max(0, (ref - d).days)
+            w *= 0.5 ** (age_days / FORM_HALFLIFE_DAYS)
+        num += w * value
+        den += w
+    if den <= 0:
+        return 0.0
+    avg = num / den
+    return avg * (den / (den + FORM_SHRINK))   # shrink small samples toward 0
+
+
+def form_supremacy(form_home: float, form_away: float) -> float:
+    """Bounded supremacy (goals) from the momentum gap between two teams.
+
+    Positive favours the home team (it arrives in better form). Two teams with
+    identical (or absent) form cancel to ~0, so momentum only ever nudges the
+    line toward whoever is genuinely hotter coming in.
+    """
+    bump = FORM_WEIGHT * (form_home - form_away)
+    return max(-FORM_CAP, min(FORM_CAP, bump))
+
+
 def expected_goals(
     rating_home: float,
     rating_away: float,
@@ -135,6 +292,7 @@ def expected_goals(
     expert: tuple[float, float] | None = None,
     expert_w: float = EXPERT_W,
     h2h_sup: float = 0.0,
+    form_sup: float = 0.0,
 ) -> tuple[float, float]:
     """Map two FIFA ratings to (lambda_home, lambda_away).
 
@@ -142,11 +300,14 @@ def expected_goals(
     expert=(home_goals, away_goals) blends the model toward an expert scoreline.
     h2h_sup: extra supremacy (goals) from past meetings; see `h2h_supremacy`.
         Applied regardless of venue — history travels with the matchup.
+    form_sup: extra supremacy (goals) from recent momentum; see `form_supremacy`.
+        The hotter team coming into the tournament gets a small nudge.
     """
     sup = (rating_home - rating_away) / K
     if not neutral:
         sup += HOME_SUP
     sup += h2h_sup
+    sup += form_sup
     total = BASE_TOTAL + abs(rating_home + rating_away - 2.0 * FIFA_MEAN) / 4000.0
     lam_home = max(MIN_LAMBDA, (total + sup) / 2.0)
     lam_away = max(MIN_LAMBDA, (total - sup) / 2.0)
@@ -216,9 +377,11 @@ class ProbabilityModel:
         neutral: bool = False,
         expert: tuple[float, float] | None = None,
         h2h_sup: float = 0.0,
+        form_sup: float = 0.0,
     ) -> dict[str, float]:
         lam_h, lam_a = expected_goals(
-            rating_home, rating_away, neutral=neutral, expert=expert, h2h_sup=h2h_sup
+            rating_home, rating_away, neutral=neutral, expert=expert,
+            h2h_sup=h2h_sup, form_sup=form_sup,
         )
         out = _grid_probs(lam_h, lam_a, dixon_coles=True)
         out["lambda_home"] = lam_h
@@ -234,8 +397,11 @@ class ProbabilityModel:
         away_goals: int,
         expert: tuple[float, float] | None = None,
         h2h_sup: float = 0.0,
+        form_sup: float = 0.0,
     ) -> dict[str, float]:
-        lam_h, lam_a = expected_goals(rating_home, rating_away, expert=expert, h2h_sup=h2h_sup)
+        lam_h, lam_a = expected_goals(
+            rating_home, rating_away, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup
+        )
         remaining = max(0.0, (90 - minute) / 90.0)
         out = _grid_probs(
             lam_h * remaining,
@@ -295,25 +461,30 @@ def sample_score(
     neutral: bool = False,
     expert: tuple[float, float] | None = None,
     h2h_sup: float = 0.0,
+    form_sup: float = 0.0,
 ) -> tuple[int, int]:
     lam_h, lam_a = expected_goals(
-        rating_home, rating_away, neutral=neutral, expert=expert, h2h_sup=h2h_sup
+        rating_home, rating_away, neutral=neutral, expert=expert,
+        h2h_sup=h2h_sup, form_sup=form_sup,
     )
     return sample_poisson(lam_h, rng), sample_poisson(lam_a, rng)
 
 
 def knockout_winner(
-    rating_home: float, rating_away: float, rng, neutral: bool = True, h2h_sup: float = 0.0
+    rating_home: float, rating_away: float, rng, neutral: bool = True,
+    h2h_sup: float = 0.0, form_sup: float = 0.0,
 ) -> int:
     """Return 0 if home advances, 1 if away. Draws resolve (ET/penalties) by
     splitting proportionally to each side's win strength."""
-    hg, ag = sample_score(rating_home, rating_away, rng, neutral=neutral, h2h_sup=h2h_sup)
+    hg, ag = sample_score(
+        rating_home, rating_away, rng, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
+    )
     if hg > ag:
         return 0
     if ag > hg:
         return 1
     probs = ProbabilityModel().pre_match(
-        rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup
+        rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
     )
     ph, pa = probs["p_home"], probs["p_away"]
     return 0 if rng.random() < ph / (ph + pa) else 1

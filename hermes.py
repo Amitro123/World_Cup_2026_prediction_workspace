@@ -20,6 +20,14 @@ python hermes.py update --match C1 --team MAR --kind lambda_mult --value 1.12 \
 python hermes.py rate --team BRA --value 1730      # set absolute FIFA points
 python hermes.py rate --team ARG --delta -120      # or shift relative
 
+# Refresh past-meetings (head-to-head) data from the web — dry-run, then write:
+python hermes.py h2h                 # propose recent meetings for all group pairs
+python hermes.py h2h --write         # fetch + merge verified rows into h2h.csv
+
+# Refresh recent-form (momentum) data from the web — dry-run, then write:
+python hermes.py form                # propose recent form for all teams
+python hermes.py form --team MEX --write   # fetch + merge one team into form.csv
+
 # Pull the current briefing (base vs adjusted probs + Hebrew recommendation):
 python hermes.py briefing --match C1
 
@@ -94,6 +102,34 @@ def cmd_rate(args) -> None:
     _print({"ok": True, "result": ds.set_team_rating(args.team, new_val)})
 
 
+def cmd_h2h(args) -> None:
+    """Refresh past-meetings (head-to-head) data from the web.
+
+    Dry-run by default (prints proposed rows); with --write it merges verified
+    recent meetings into data/h2h.csv, which the engine reads as a small bounded
+    supremacy signal. Recency-filtered (default: meetings from 2018 on).
+    """
+    import fetch_h2h
+
+    ds = DataStore.load(DATA)
+    pairs = [tuple(args.pair)] if args.pair else fetch_h2h.group_pairs(ds)
+    _print(fetch_h2h.run(pairs, args.cutoff, args.write))
+
+
+def cmd_form(args) -> None:
+    """Refresh recent-form (momentum) data from the web.
+
+    Dry-run by default (prints proposed rows); with --write it merges verified
+    recent matches into data/form.csv, which the engine reads as a small bounded
+    momentum signal. Recency-filtered (default: matches from 2025 on).
+    """
+    import fetch_form
+
+    ds = DataStore.load(DATA)
+    teams = [args.team] if args.team else list(ds.teams.team_id)
+    _print(fetch_form.run(teams, args.cutoff, args.write))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Hermes <-> WorldCup2026 bridge")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -124,6 +160,19 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--value", type=float, default=None, help="absolute new FIFA points")
     r.add_argument("--delta", type=float, default=None, help="add to current FIFA points")
     r.set_defaults(func=cmd_rate)
+
+    h = sub.add_parser("h2h", help="refresh past-meetings (head-to-head) data from the web")
+    h.add_argument("--pair", nargs=2, metavar=("HOME", "AWAY"),
+                   help="only this pair, e.g. --pair ENG CRO")
+    h.add_argument("--cutoff", type=int, default=2018, help="earliest year to keep")
+    h.add_argument("--write", action="store_true", help="merge rows into data/h2h.csv")
+    h.set_defaults(func=cmd_h2h)
+
+    fm = sub.add_parser("form", help="refresh recent-form (momentum) data from the web")
+    fm.add_argument("--team", default=None, help="only this team, e.g. --team MEX")
+    fm.add_argument("--cutoff", type=int, default=2025, help="earliest year to keep")
+    fm.add_argument("--write", action="store_true", help="merge rows into data/form.csv")
+    fm.set_defaults(func=cmd_form)
     return p
 
 

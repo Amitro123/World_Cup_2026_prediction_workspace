@@ -32,6 +32,7 @@ DATA_FILES = {
     "news": "news_adjustments.csv",
     "players": "players.csv",
     "h2h": "h2h.csv",
+    "form": "form.csv",
 }
 
 NEWS_COLUMNS = [
@@ -56,6 +57,7 @@ class DataStore:
     news: pd.DataFrame
     players: pd.DataFrame
     h2h: pd.DataFrame
+    form: pd.DataFrame
     model: engine.ProbabilityModel = field(default_factory=engine.ProbabilityModel)
 
     # --- loading / saving ---------------------------------------------------
@@ -84,6 +86,7 @@ class DataStore:
             news=news,
             players=_read("players", required=False),
             h2h=_read("h2h", required=False),
+            form=_read("form", required=False),
             model=model or engine.ProbabilityModel(),
         )
 
@@ -179,6 +182,33 @@ class DataStore:
         """Bounded supremacy (goals) from past meetings, home perspective."""
         return engine.h2h_supremacy(self.h2h_meetings(home_id, away_id), ref_year=ref_year)
 
+    def recent_form(self, team_id: str) -> list[dict]:
+        """A team's recent matches (momentum input), each oriented to the team.
+
+        Reads form.csv (columns: team_id, gf, ga, comp, date). gf/ga are goals
+        for/against from this team's perspective. Returns [] if no data.
+        """
+        if self.form is None or self.form.empty:
+            return []
+        f = self.form
+        rows = f[f.team_id == team_id]
+        out = []
+        for r in rows.itertuples():
+            comp = str(r.comp) if "comp" in rows.columns and pd.notna(r.comp) else ""
+            date = str(r.date) if "date" in rows.columns and pd.notna(r.date) else None
+            out.append({"gf": int(r.gf), "ga": int(r.ga), "comp": comp, "date": date})
+        return out
+
+    def team_form(self, team_id: str, ref_date=None) -> float:
+        """A team's momentum scalar from its recent matches (0.0 if none)."""
+        return engine.form_score(self.recent_form(team_id), ref_date=ref_date)
+
+    def form_supremacy_for(self, home_id: str, away_id: str, ref_date=None) -> float:
+        """Bounded supremacy (goals) from the momentum gap, home perspective."""
+        return engine.form_supremacy(
+            self.team_form(home_id, ref_date), self.team_form(away_id, ref_date)
+        )
+
     # --- core operation -----------------------------------------------------
     def update_match_state(
         self,
@@ -208,8 +238,10 @@ class DataStore:
         finished = minute >= 90
         expert = self.expert_for(match_id)
         h2h_sup = 0.0 if rating_override else self.h2h_supremacy_for(m.home_id, m.away_id)
+        form_sup = 0.0 if rating_override else self.form_supremacy_for(m.home_id, m.away_id)
         probs = self.model.in_play(
-            r_home, r_away, minute, home_goals, away_goals, expert=expert, h2h_sup=h2h_sup
+            r_home, r_away, minute, home_goals, away_goals,
+            expert=expert, h2h_sup=h2h_sup, form_sup=form_sup,
         )
         if mult_h != 1.0 or mult_a != 1.0:
             remaining = probs.get("remaining_fraction", 0.0)
@@ -270,7 +302,10 @@ class DataStore:
         r_home, r_away, mult_h, mult_a, _ = self._adjusted_inputs(match_id, apply_news=apply_news)
         expert = self.expert_for(match_id)
         h2h_sup = self.h2h_supremacy_for(m.home_id, m.away_id)
-        lam_h, lam_a = engine.expected_goals(r_home, r_away, expert=expert, h2h_sup=h2h_sup)
+        form_sup = self.form_supremacy_for(m.home_id, m.away_id)
+        lam_h, lam_a = engine.expected_goals(
+            r_home, r_away, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup
+        )
         lam_h *= mult_h
         lam_a *= mult_a
         return engine.probs_from_lambdas(lam_h, lam_a, dixon_coles=True)
