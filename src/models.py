@@ -377,6 +377,11 @@ class DataStore:
             "shift": round(delta, 4),
             "notes": notes,
             "recommendation": rec,
+            # Expected goals (λ) — used for dynamic score prediction
+            "base_lambda_home": round(base.get("lambda_home", 0), 2),
+            "base_lambda_away": round(base.get("lambda_away", 0), 2),
+            "adj_lambda_home": round(adj.get("lambda_home", 0), 2),
+            "adj_lambda_away": round(adj.get("lambda_away", 0), 2),
         }
 
     # --- aggregate views ----------------------------------------------------
