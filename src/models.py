@@ -31,6 +31,7 @@ DATA_FILES = {
     "expert": "expert_scores.csv",
     "news": "news_adjustments.csv",
     "players": "players.csv",
+    "h2h": "h2h.csv",
 }
 
 NEWS_COLUMNS = [
@@ -54,6 +55,7 @@ class DataStore:
     expert: pd.DataFrame
     news: pd.DataFrame
     players: pd.DataFrame
+    h2h: pd.DataFrame
     model: engine.ProbabilityModel = field(default_factory=engine.ProbabilityModel)
 
     # --- loading / saving ---------------------------------------------------
@@ -81,6 +83,7 @@ class DataStore:
             expert=_read("expert", required=False),
             news=news,
             players=_read("players", required=False),
+            h2h=_read("h2h", required=False),
             model=model or engine.ProbabilityModel(),
         )
 
@@ -150,6 +153,32 @@ class DataStore:
         r = rows.iloc[0]
         return float(r["expert_home"]), float(r["expert_away"])
 
+    def h2h_meetings(self, home_id: str, away_id: str) -> list[dict]:
+        """Past meetings between two teams, each oriented to `home_id`.
+
+        Reads h2h.csv (columns: team_a, team_b, a_goals, b_goals, comp, year).
+        Order in the file does not matter; goal difference is flipped so it is
+        always from the home team's perspective. Returns [] if no data.
+        """
+        if self.h2h is None or self.h2h.empty:
+            return []
+        h = self.h2h
+        pair = h[((h.team_a == home_id) & (h.team_b == away_id))
+                 | ((h.team_a == away_id) & (h.team_b == home_id))]
+        out = []
+        for r in pair.itertuples():
+            ag = int(r.a_goals)
+            bg = int(r.b_goals)
+            gd = (ag - bg) if r.team_a == home_id else (bg - ag)
+            year = int(r.year) if "year" in pair.columns and pd.notna(r.year) else None
+            comp = str(r.comp) if "comp" in pair.columns and pd.notna(r.comp) else ""
+            out.append({"gd": gd, "comp": comp, "year": year})
+        return out
+
+    def h2h_supremacy_for(self, home_id: str, away_id: str, ref_year: int = 2026) -> float:
+        """Bounded supremacy (goals) from past meetings, home perspective."""
+        return engine.h2h_supremacy(self.h2h_meetings(home_id, away_id), ref_year=ref_year)
+
     # --- core operation -----------------------------------------------------
     def update_match_state(
         self,
@@ -178,7 +207,10 @@ class DataStore:
 
         finished = minute >= 90
         expert = self.expert_for(match_id)
-        probs = self.model.in_play(r_home, r_away, minute, home_goals, away_goals, expert=expert)
+        h2h_sup = 0.0 if rating_override else self.h2h_supremacy_for(m.home_id, m.away_id)
+        probs = self.model.in_play(
+            r_home, r_away, minute, home_goals, away_goals, expert=expert, h2h_sup=h2h_sup
+        )
         if mult_h != 1.0 or mult_a != 1.0:
             remaining = probs.get("remaining_fraction", 0.0)
             lam_h = probs["lambda_home"] * remaining * mult_h
@@ -237,7 +269,8 @@ class DataStore:
         m = self.match(match_id)
         r_home, r_away, mult_h, mult_a, _ = self._adjusted_inputs(match_id, apply_news=apply_news)
         expert = self.expert_for(match_id)
-        lam_h, lam_a = engine.expected_goals(r_home, r_away, expert=expert)
+        h2h_sup = self.h2h_supremacy_for(m.home_id, m.away_id)
+        lam_h, lam_a = engine.expected_goals(r_home, r_away, expert=expert, h2h_sup=h2h_sup)
         lam_h *= mult_h
         lam_a *= mult_a
         return engine.probs_from_lambdas(lam_h, lam_a, dixon_coles=True)

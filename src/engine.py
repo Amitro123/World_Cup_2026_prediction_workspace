@@ -48,6 +48,17 @@ EXPERT_W = 0.55      # weight on the model vs an expert scoreline target
 MIN_LAMBDA = 0.18    # floor on any expected-goals value
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
+# --- Head-to-head (past meetings) signal ------------------------------------
+# FIFA points already capture most of a team's strength, so H2H is a small,
+# bounded nudge: a team that has historically beaten this specific opponent gets
+# a little extra supremacy. Friendlies count less; older meetings decay; small
+# samples shrink toward zero so a single game barely moves the line.
+H2H_WEIGHT = 0.18         # goals of supremacy per goal of weighted-avg H2H margin
+H2H_CAP = 0.50            # max |supremacy| H2H may contribute (goals)
+H2H_SHRINK = 3.0          # pseudo-count: small samples shrink toward zero
+H2H_FRIENDLY_W = 0.4      # a friendly counts less than a competitive game
+H2H_HALFLIFE_YEARS = 6.0  # recency half-life for down-weighting old meetings
+
 # Status thresholds (probability that my pick is still the final outcome)
 ON_TRACK_MIN = 0.55
 AT_RISK_MIN = 0.25
@@ -85,21 +96,57 @@ def _dc_tau(i: int, j: int, lam_home: float, lam_away: float) -> float:
     return 1.0
 
 
+def h2h_supremacy(meetings, ref_year: int | None = None) -> float:
+    """Weighted head-to-head supremacy (goals), from the HOME team's perspective.
+
+    meetings: iterable of dicts, each oriented to the home team:
+        gd    int  home_goals - away_goals in that past meeting
+        comp  str  'friendly' (down-weighted) or anything else (competitive)
+        year  int  optional, for recency weighting against ref_year
+
+    Returns a bounded supremacy delta in goals (positive favours the home team).
+    Friendlies count less; older games decay; small samples shrink toward zero.
+    """
+    num = den = 0.0
+    for m in meetings:
+        comp = str(m.get("comp", "")).strip().lower()
+        w = H2H_FRIENDLY_W if comp.startswith("f") else 1.0
+        year = m.get("year")
+        if ref_year and year:
+            try:
+                age = max(0, int(ref_year) - int(year))
+                w *= 0.5 ** (age / H2H_HALFLIFE_YEARS)
+            except (TypeError, ValueError):
+                pass
+        num += w * float(m["gd"])
+        den += w
+    if den <= 0:
+        return 0.0
+    avg = num / den
+    shrunk = avg * (den / (den + H2H_SHRINK))   # shrink small samples toward 0
+    bump = H2H_WEIGHT * shrunk
+    return max(-H2H_CAP, min(H2H_CAP, bump))
+
+
 def expected_goals(
     rating_home: float,
     rating_away: float,
     neutral: bool = False,
     expert: tuple[float, float] | None = None,
     expert_w: float = EXPERT_W,
+    h2h_sup: float = 0.0,
 ) -> tuple[float, float]:
     """Map two FIFA ratings to (lambda_home, lambda_away).
 
     neutral=True drops the home advantage (knockout games at neutral venues).
     expert=(home_goals, away_goals) blends the model toward an expert scoreline.
+    h2h_sup: extra supremacy (goals) from past meetings; see `h2h_supremacy`.
+        Applied regardless of venue — history travels with the matchup.
     """
     sup = (rating_home - rating_away) / K
     if not neutral:
         sup += HOME_SUP
+    sup += h2h_sup
     total = BASE_TOTAL + abs(rating_home + rating_away - 2.0 * FIFA_MEAN) / 4000.0
     lam_home = max(MIN_LAMBDA, (total + sup) / 2.0)
     lam_away = max(MIN_LAMBDA, (total - sup) / 2.0)
@@ -168,9 +215,10 @@ class ProbabilityModel:
         rating_away: float,
         neutral: bool = False,
         expert: tuple[float, float] | None = None,
+        h2h_sup: float = 0.0,
     ) -> dict[str, float]:
         lam_h, lam_a = expected_goals(
-            rating_home, rating_away, neutral=neutral, expert=expert
+            rating_home, rating_away, neutral=neutral, expert=expert, h2h_sup=h2h_sup
         )
         out = _grid_probs(lam_h, lam_a, dixon_coles=True)
         out["lambda_home"] = lam_h
@@ -185,8 +233,9 @@ class ProbabilityModel:
         home_goals: int,
         away_goals: int,
         expert: tuple[float, float] | None = None,
+        h2h_sup: float = 0.0,
     ) -> dict[str, float]:
-        lam_h, lam_a = expected_goals(rating_home, rating_away, expert=expert)
+        lam_h, lam_a = expected_goals(rating_home, rating_away, expert=expert, h2h_sup=h2h_sup)
         remaining = max(0.0, (90 - minute) / 90.0)
         out = _grid_probs(
             lam_h * remaining,
@@ -245,21 +294,26 @@ def sample_score(
     rng,
     neutral: bool = False,
     expert: tuple[float, float] | None = None,
+    h2h_sup: float = 0.0,
 ) -> tuple[int, int]:
-    lam_h, lam_a = expected_goals(rating_home, rating_away, neutral=neutral, expert=expert)
+    lam_h, lam_a = expected_goals(
+        rating_home, rating_away, neutral=neutral, expert=expert, h2h_sup=h2h_sup
+    )
     return sample_poisson(lam_h, rng), sample_poisson(lam_a, rng)
 
 
 def knockout_winner(
-    rating_home: float, rating_away: float, rng, neutral: bool = True
+    rating_home: float, rating_away: float, rng, neutral: bool = True, h2h_sup: float = 0.0
 ) -> int:
     """Return 0 if home advances, 1 if away. Draws resolve (ET/penalties) by
     splitting proportionally to each side's win strength."""
-    hg, ag = sample_score(rating_home, rating_away, rng, neutral=neutral)
+    hg, ag = sample_score(rating_home, rating_away, rng, neutral=neutral, h2h_sup=h2h_sup)
     if hg > ag:
         return 0
     if ag > hg:
         return 1
-    probs = ProbabilityModel().pre_match(rating_home, rating_away, neutral=neutral)
+    probs = ProbabilityModel().pre_match(
+        rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup
+    )
     ph, pa = probs["p_home"], probs["p_away"]
     return 0 if rng.random() < ph / (ph + pa) else 1

@@ -32,6 +32,7 @@ OPENER_TEAMS = ("MEX", "RSA")
 def _group_goal_sim(ds, n: int, rng) -> tuple[dict, dict, dict]:
     """Monte-Carlo the 72 group games -> expected goals for/against per team."""
     ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
+    h2h = knockout.build_h2h(ds)
     gf = defaultdict(float)
     ga = defaultdict(float)
     games = ds.matches
@@ -42,7 +43,8 @@ def _group_goal_sim(ds, n: int, rng) -> tuple[dict, dict, dict]:
                 hg, ag = int(m.home_goals), int(m.away_goals)
             else:
                 hg, ag = engine.sample_score(
-                    ratings[h], ratings[a], rng, expert=ds.expert_for(m.match_id)
+                    ratings[h], ratings[a], rng,
+                    expert=ds.expert_for(m.match_id), h2h_sup=h2h.get((h, a), 0.0),
                 )
             gf[h] += hg; ga[h] += ag
             gf[a] += ag; ga[a] += hg

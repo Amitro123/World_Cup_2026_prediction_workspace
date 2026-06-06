@@ -93,8 +93,30 @@ DISPLAY_ROUNDS = [
 ]
 
 
-def simulate_group(ds, group_id, ratings, rng):
+def build_h2h(ds) -> dict[tuple, float]:
+    """Pairwise head-to-head supremacy lookup: (home_id, away_id) -> goals.
+
+    Precomputed once per run so the Monte-Carlo loop stays cheap. Pairings with
+    no recorded history are simply absent (treated as 0).
+    """
+    out: dict[tuple, float] = {}
+    if getattr(ds, "h2h", None) is None or ds.h2h.empty:
+        return out
+    seen = set()
+    for r in ds.h2h.itertuples():
+        fs = frozenset((r.team_a, r.team_b))
+        if len(fs) != 2 or fs in seen:
+            continue
+        seen.add(fs)
+        a, b = r.team_a, r.team_b
+        out[(a, b)] = ds.h2h_supremacy_for(a, b)
+        out[(b, a)] = ds.h2h_supremacy_for(b, a)
+    return out
+
+
+def simulate_group(ds, group_id, ratings, rng, h2h=None):
     """Return (ranked_team_ids, record_dict) for one group."""
+    h2h = h2h or {}
     teams = list(ds.teams.loc[ds.teams.group_id == group_id, "team_id"])
     rec = {t: {"pts": 0, "gf": 0, "ga": 0} for t in teams}
     fixtures = ds.matches.loc[ds.matches.group_id == group_id]
@@ -104,7 +126,8 @@ def simulate_group(ds, group_id, ratings, rng):
             hg, ag = int(m.home_goals), int(m.away_goals)
         else:
             hg, ag = engine.sample_score(
-                ratings[h], ratings[a], rng, expert=ds.expert_for(m.match_id)
+                ratings[h], ratings[a], rng,
+                expert=ds.expert_for(m.match_id), h2h_sup=h2h.get((h, a), 0.0),
             )
         rec[h]["gf"] += hg; rec[h]["ga"] += ag
         rec[a]["gf"] += ag; rec[a]["ga"] += hg
@@ -177,11 +200,12 @@ def _resolve_r32(pos, third_assign) -> dict[int, tuple]:
     return out
 
 
-def _group_phase(ds, ratings, rng):
+def _group_phase(ds, ratings, rng, h2h=None):
     """Run all 12 groups; return (pos, third_assign, standings)."""
+    h2h = h2h or {}
     pos, group_thirds, standings = {}, [], {}
     for g in ds.groups.group_id:
-        ranked, rec = simulate_group(ds, g, ratings, rng)
+        ranked, rec = simulate_group(ds, g, ratings, rng, h2h)
         pos[(g, 1)], pos[(g, 2)], pos[(g, 3)], pos[(g, 4)] = ranked
         standings[g] = [(t, rec[t]) for t in ranked]
         group_thirds.append((g, rec[ranked[2]]))
@@ -196,8 +220,9 @@ def _group_phase(ds, ratings, rng):
     return pos, third_assign, standings
 
 
-def simulate_once(ds, ratings, rng, counts):
-    pos, third_assign, _ = _group_phase(ds, ratings, rng)
+def simulate_once(ds, ratings, rng, counts, h2h=None):
+    h2h = h2h or {}
+    pos, third_assign, _ = _group_phase(ds, ratings, rng, h2h)
 
     # tally qualifiers
     for g in ds.groups.group_id:
@@ -210,23 +235,23 @@ def simulate_once(ds, ratings, rng, counts):
     winners = {}
     for m in range(73, 89):
         h, a = r32[m]
-        w = h if engine.knockout_winner(ratings[h], ratings[a], rng) == 0 else a
+        w = h if engine.knockout_winner(ratings[h], ratings[a], rng, h2h_sup=h2h.get((h, a), 0.0)) == 0 else a
         winners[m] = w
         counts[w][WIN_COUNTER[m]] += 1
     for m in sorted(TREE):  # ascending: every feeder is resolved before its match
         fa, fb = TREE[m]
         h, a = winners[fa], winners[fb]
-        w = h if engine.knockout_winner(ratings[h], ratings[a], rng) == 0 else a
+        w = h if engine.knockout_winner(ratings[h], ratings[a], rng, h2h_sup=h2h.get((h, a), 0.0)) == 0 else a
         winners[m] = w
         counts[w][WIN_COUNTER[m]] += 1
 
 
-def _play_detail(rh, ra, rng, neutral=True):
+def _play_detail(rh, ra, rng, neutral=True, h2h_sup=0.0):
     """Play one knockout tie, return (winner_idx, home_goals, away_goals, note)."""
-    hg, ag = engine.sample_score(rh, ra, rng, neutral=neutral)
+    hg, ag = engine.sample_score(rh, ra, rng, neutral=neutral, h2h_sup=h2h_sup)
     if hg != ag:
         return (0 if hg > ag else 1, hg, ag, "")
-    probs = engine.ProbabilityModel().pre_match(rh, ra, neutral=neutral)
+    probs = engine.ProbabilityModel().pre_match(rh, ra, neutral=neutral, h2h_sup=h2h_sup)
     ph, pa = probs["p_home"], probs["p_away"]
     wi = 0 if rng.random() < ph / (ph + pa) else 1
     return (wi, hg, ag, " (פנדלים)")
@@ -236,8 +261,9 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
     """Simulate the tournament ONCE and return the full bracket with scores."""
     rng = random.Random(seed)
     ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
+    h2h = build_h2h(ds)
 
-    pos, third_assign, _ = _group_phase(ds, ratings, rng)
+    pos, third_assign, _ = _group_phase(ds, ratings, rng, h2h)
     r32 = _resolve_r32(pos, third_assign)
 
     winners, rounds = {}, []
@@ -249,7 +275,7 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
             else:
                 fa, fb = TREE[m]
                 h, a = winners[fa], winners[fb]
-            wi, hg, ag, note = _play_detail(ratings[h], ratings[a], rng)
+            wi, hg, ag, note = _play_detail(ratings[h], ratings[a], rng, h2h_sup=h2h.get((h, a), 0.0))
             w = h if wi == 0 else a
             winners[m] = w
             ties.append(
@@ -280,12 +306,13 @@ def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
     """Run the Monte-Carlo and return a probability table sorted by title odds."""
     rng = random.Random(seed)
     ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
+    h2h = build_h2h(ds)
     counts = {
         t: {"knockout": 0, "r16": 0, "qf": 0, "sf": 0, "final": 0, "title": 0}
         for t in ds.teams.team_id
     }
     for _ in range(n):
-        simulate_once(ds, ratings, rng, counts)
+        simulate_once(ds, ratings, rng, counts, h2h)
 
     rows = []
     for t, c in counts.items():
