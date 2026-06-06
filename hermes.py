@@ -16,6 +16,10 @@ python hermes.py update --match C1 --team BRA --kind rating_delta --value -60 \
 python hermes.py update --match C1 --team MAR --kind lambda_mult --value 1.12 \
     --note "הימור על מרוקו זז משמעותית" --source "pinnacle"
 
+# Pre-tournament rating refresh (permanent, all models) — e.g. new FIFA ranking:
+python hermes.py rate --team BRA --value 1730      # set absolute FIFA points
+python hermes.py rate --team ARG --delta -120      # or shift relative
+
 # Pull the current briefing (base vs adjusted probs + Hebrew recommendation):
 python hermes.py briefing --match C1
 
@@ -71,6 +75,25 @@ def cmd_clear(args) -> None:
     _print({"ok": ok, "adj_id": args.id})
 
 
+def cmd_rate(args) -> None:
+    """Pre-tournament rating refresh: permanently set a team's FIFA points.
+
+    Use this (not `update`) when Hermes learns of a lasting strength change
+    before the tournament — a new FIFA ranking release, a long-term injury, a
+    squad-list shock. It rewrites teams.csv so every downstream model (groups,
+    knockout, bonus) uses the new strength. `update` stays for single-match,
+    live news that should not change the team's base rating.
+    """
+    ds = DataStore.load(DATA)
+    if args.delta is not None:
+        new_val = ds.team_rating(args.team) + args.delta
+    elif args.value is not None:
+        new_val = args.value
+    else:
+        raise SystemExit("rate: provide --value or --delta")
+    _print({"ok": True, "result": ds.set_team_rating(args.team, new_val)})
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Hermes <-> WorldCup2026 bridge")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -95,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("clear", help="deactivate an adjustment by id")
     c.add_argument("--id", required=True)
     c.set_defaults(func=cmd_clear)
+
+    r = sub.add_parser("rate", help="pre-tournament: set/adjust a team's FIFA points")
+    r.add_argument("--team", required=True)
+    r.add_argument("--value", type=float, default=None, help="absolute new FIFA points")
+    r.add_argument("--delta", type=float, default=None, help="add to current FIFA points")
+    r.set_defaults(func=cmd_rate)
     return p
 
 

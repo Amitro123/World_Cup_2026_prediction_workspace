@@ -109,15 +109,48 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
     arg, por = PLAYER_TEAM["מסי"], PLAYER_TEAM["רונאלדו"]
     further = "מסי" if depth(arg) >= depth(por) else "רונאלדו"
 
-    # --- 7) Mbappé vs Vinícius: who scores more (proxy) ---
+    # --- 7) Mbappé vs Vinícius: who scores more ---
     fra, bra = PLAYER_TEAM["אמבפה"], PLAYER_TEAM["ויניסיוס"]
-    # expected total goals proxy = team scoring rate/game * expected total games
+    # expected total goals = team scoring rate/game * expected total games
     def exp_team_goals(tid):
         rate = gf[tid] / 3.0  # per-game scoring rate from group stage
         games = 3.0 + _expected_ko_games(df.loc[tid])
         return rate * games
-    fra_g, bra_g = exp_team_goals(fra), exp_team_goals(bra)
-    more_goals = "אמבפה" if fra_g >= bra_g else "ויניסיוס"
+
+    # --- player model: expected goals/assists per player ---
+    # player goals  = goal_share  * team expected goals over the run
+    # player assists = assist_share * team expected goals over the run
+    prows = []
+    if ds.players is not None and not ds.players.empty:
+        for _, p in ds.players.iterrows():
+            tid = p["team_id"]
+            if tid not in df.index:
+                continue
+            teamg = exp_team_goals(tid)
+            prows.append({
+                "name": p["name_he"],
+                "team": name(tid),
+                "team_id": tid,
+                "exp_goals": float(p["goal_share"]) * teamg,
+                "exp_assists": float(p["assist_share"]) * teamg,
+            })
+
+    def _find_player(name_key, team_id):
+        for r in prows:
+            if r["name"] == name_key and r["team_id"] == team_id:
+                return r
+        return None
+
+    mb, vi = _find_player("אמבפה", fra), _find_player("ויניסיוס", bra)
+    if mb and vi:
+        more_goals = "אמבפה" if mb["exp_goals"] >= vi["exp_goals"] else "ויניסיוס"
+        mbv_note = (f"ממודל השחקנים: אמבפה ~{mb['exp_goals']:.1f} שערים צפויים, "
+                    f"ויניסיוס ~{vi['exp_goals']:.1f}.")
+    else:
+        fra_g, bra_g = exp_team_goals(fra), exp_team_goals(bra)
+        more_goals = "אמבפה" if fra_g >= bra_g else "ויניסיוס"
+        mbv_note = (f"פרוקסי לפי עומק בטורניר: צרפת ~{fra_g:.1f} שערים צפויים, "
+                    f"ברזיל ~{bra_g:.1f}.")
 
     def stage_row(tid):
         r = df.loc[tid]
@@ -127,17 +160,31 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
             "final_%": round(r["final_%"], 1), "title_%": round(r["title_%"], 1),
         }
 
+    if prows:
+        assist_sorted = sorted(prows, key=lambda r: -r["exp_assists"])
+        ak = assist_sorted[0]
+        top_assists = {
+            "answer": f"{ak['name']} ({ak['team']})",
+            "player_level": True,
+            "note": "ממודל השחקנים: בישולים צפויים = נתח בישול × תוחלת שערי הנבחרת לאורך הטורניר.",
+            "table": [{"player": f"{r['name']} ({r['team']})",
+                       "exp_assists": round(r["exp_assists"], 2)}
+                      for r in assist_sorted[:6]],
+        }
+    else:
+        top_assists = {
+            "answer": "למין ימאל (ספרד)",
+            "player_level": True,
+            "note": "שאלת שחקן — אין players.csv; בורר מרכזי בנבחרת שצולחת עמוק.",
+        }
+
     return {
         "runner_up": {
             "answer": name(runnerup_pick),
             "note": f"בהנחה ש{name(champion)} אלופה; הסגנית הסבירה הבאה.",
             "table": top_finalists,
         },
-        "top_assists": {
-            "answer": "למין ימאל (ספרד)",
-            "player_level": True,
-            "note": "שאלת שחקן — לא יוצא מהמודל; בורר מרכזי בנבחרת שצולחת עמוק.",
-        },
+        "top_assists": top_assists,
         "first_goal": {
             "answer": name(opener_fav),
             "note": f"משחק פתיחה: {name(opener.home_id)} נגד {name(opener.away_id)}; "
@@ -158,7 +205,6 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
         "mbappe_vs_vinicius": {
             "answer": more_goals,
             "player_level": True,
-            "note": f"פרוקסי לפי עומק בטורניר: צרפת ~{fra_g:.1f} שערים צפויים, "
-                    f"ברזיל ~{bra_g:.1f} (אמבפה/ויניסיוס הכובשים המרכזיים).",
+            "note": mbv_note,
         },
     }

@@ -1,0 +1,29 @@
+team_id,name_he,name_en,role,goal_share,assist_share
+FRA,אמבפה,Kylian Mbappe,FW,0.34,0.16
+FRA,דמבלה,Ousmane Dembele,FW,0.16,0.22
+FRA,גריזמן,Antoine Griezmann,MF,0.12,0.20
+ARG,מסי,Lionel Messi,FW,0.22,0.30
+ARG,לאוטרו מרטינס,Lautaro Martinez,FW,0.26,0.12
+ARG,חוליאן אלברס,Julian Alvarez,FW,0.20,0.14
+ESP,למין ימאל,Lamine Yamal,FW,0.20,0.32
+ESP,ניקו וויליאמס,Nico Williams,FW,0.18,0.20
+ESP,פדרי,Pedri,MF,0.08,0.22
+ESP,דני אולמו,Dani Olmo,MF,0.16,0.16
+ENG,הארי קיין,Harry Kane,FW,0.32,0.14
+ENG,בלינגהאם,Jude Bellingham,MF,0.18,0.22
+ENG,סאקה,Bukayo Saka,FW,0.16,0.24
+ENG,פודן,Phil Foden,MF,0.12,0.18
+POR,רונאלדו,Cristiano Ronaldo,FW,0.30,0.10
+POR,ברונו פרננדס,Bruno Fernandes,MF,0.16,0.28
+POR,לאו,Rafael Leao,FW,0.16,0.18
+BRA,ויניסיוס,Vinicius Junior,FW,0.26,0.22
+BRA,רפיניה,Raphinha,FW,0.22,0.20
+BRA,רודריגו,Rodrygo,FW,0.18,0.16
+NED,חאקפו,Cody Gakpo,FW,0.24,0.16
+NED,דה יונג,Frenkie de Jong,MF,0.08,0.20
+BEL,דה ברוינה,Kevin De Bruyne,MF,0.14,0.34
+BEL,לוקאקו,Romelu Lukaku,FW,0.30,0.12
+GER,מוסיאלה,Jamal Musiala,MF,0.22,0.22
+GER,וירץ,Florian Wirtz,MF,0.16,0.26
+MAR,חכימי,Achraf Hakimi,DF,0.10,0.22
+MAR,זייש,Hakim Ziyech,MF,0.14,0.24

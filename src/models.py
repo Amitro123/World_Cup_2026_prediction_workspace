@@ -30,6 +30,7 @@ DATA_FILES = {
     "my_predictions": "my_predictions.csv",
     "expert": "expert_scores.csv",
     "news": "news_adjustments.csv",
+    "players": "players.csv",
 }
 
 NEWS_COLUMNS = [
@@ -52,6 +53,7 @@ class DataStore:
     predictions: pd.DataFrame
     expert: pd.DataFrame
     news: pd.DataFrame
+    players: pd.DataFrame
     model: engine.ProbabilityModel = field(default_factory=engine.ProbabilityModel)
 
     # --- loading / saving ---------------------------------------------------
@@ -78,6 +80,7 @@ class DataStore:
             predictions=_read("my_predictions", required=False),
             expert=_read("expert", required=False),
             news=news,
+            players=_read("players", required=False),
             model=model or engine.ProbabilityModel(),
         )
 
@@ -91,6 +94,31 @@ class DataStore:
 
     def save_news(self) -> None:
         self.news.to_csv(os.path.join(self.data_dir, DATA_FILES["news"]), index=False)
+
+    def save_teams(self) -> None:
+        self.teams.to_csv(os.path.join(self.data_dir, DATA_FILES["teams"]), index=False)
+
+    def set_team_rating(self, team_id: str, fifa_points: float) -> dict:
+        """Permanently set a team's FIFA points (pre-tournament refresh).
+
+        Recomputes the 0–100 power_rating for ALL teams from the new spread and
+        persists teams.csv. Unlike a Hermes news adjustment (single match, live),
+        this changes the team's base strength everywhere — group sim, knockout,
+        bonus questions. Returns {team, old, new, power_rating}.
+        """
+        mask = self.teams.team_id == team_id
+        if not mask.any():
+            raise KeyError(f"unknown team_id: {team_id}")
+        old = float(self.teams.loc[mask, "fifa_points"].iloc[0])
+        self.teams.loc[mask, "fifa_points"] = float(fifa_points)
+        if "power_rating" in self.teams.columns:
+            fp = self.teams["fifa_points"].astype(float)
+            lo, hi = fp.min(), fp.max()
+            span = hi - lo if hi > lo else 1.0
+            self.teams["power_rating"] = ((fp - lo) / span * 100.0).round(2)
+        self.save_teams()
+        new_pr = float(self.teams.loc[mask, "power_rating"].iloc[0]) if "power_rating" in self.teams.columns else None
+        return {"team": team_id, "old": old, "new": float(fifa_points), "power_rating": new_pr}
 
     # --- lookups ------------------------------------------------------------
     def team_name(self, team_id: str, lang: str = "he") -> str:

@@ -398,4 +398,6 @@ elif view == "שאלות בונוס":
         st.dataframe(pd.DataFrame(b["messi_vs_ronaldo"]["table"]), use_container_width=True, hide_index=True)
 
         st.markdown(f"**מלך הבישולים: {b['top_assists']['answer']}** ⚠️ — {b['top_assists']['note']}")
+        if b["top_assists"].get("table"):
+            st.dataframe(pd.DataFrame(b["top_assists"]["table"]), use_container_width=True, hide_index=True)
         st.markdown(f"**אמבפה vs ויניסיוס → {b['mbappe_vs_vinicius']['answer']}** ⚠️ — {b['mbappe_vs_vinicius']['note']}")

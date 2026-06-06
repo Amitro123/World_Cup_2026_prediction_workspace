@@ -12,15 +12,17 @@ How it works
    live agent writes back) or sampled from the Poisson engine. Standings rank by
    points, goal difference, goals for.
 2. Qualifiers: 12 group winners + 12 runners-up + the 8 best third-placed teams.
-3. Bracket: a fixed position-based R32 template (BRACKET_R32, editable below),
-   with a light de-confliction pass so a third-placed team does not meet a side
-   from its own group in the Round of 32.
+3. Bracket: the **official FIFA 2026 bracket** (matches M73–M104). The Round of
+   32 slots are fixed; the eight third-place slots each carry the official
+   Annex-C candidate-group list, and the 8 qualifying thirds are assigned to
+   those slots by constrained bipartite matching (so a third always lands in a
+   slot its group is eligible for — no same-group rematch in R32).
 4. Knockout games are played at a neutral venue; draws resolve via the
    strength-weighted tiebreak in engine.knockout_winner (ET / penalties proxy).
 
-NOTE: BRACKET_R32 is a representative, self-consistent bracket, not FIFA's exact
-official slot table. Edit it to match the official bracket if you want exact
-paths; the simulation logic is unchanged.
+The R16/QF/SF tree is wired by explicit match dependencies (TREE), so the
+left/right halves of the draw match the real bracket rather than a naive
+consecutive fold.
 """
 
 from __future__ import annotations
@@ -31,45 +33,64 @@ import pandas as pd
 
 from . import engine
 
-# Each R32 tie is (slot_a, slot_b). A slot is:
-#   ("W", group) group winner | ("R", group) runner-up | ("3", idx) idx-th best third
-BRACKET_R32 = [
-    (("W", "A"), ("3", 0)),
-    (("R", "C"), ("R", "E")),
-    (("W", "F"), ("3", 1)),
-    (("W", "C"), ("3", 2)),
-    (("W", "I"), ("3", 3)),
-    (("R", "A"), ("R", "B")),
-    (("W", "E"), ("3", 4)),
-    (("W", "B"), ("R", "F")),
-    (("W", "K"), ("3", 5)),
-    (("R", "I"), ("R", "J")),
-    (("W", "H"), ("3", 6)),
-    (("W", "J"), ("R", "H")),
-    (("W", "L"), ("3", 7)),
-    (("R", "D"), ("R", "G")),
-    (("W", "D"), ("R", "K")),
-    (("W", "G"), ("R", "L")),
-]
+# --- Official FIFA 2026 Round of 32 (matches M73–M88) ---------------------
+# A slot is one of:
+#   ("W", group)  group winner
+#   ("R", group)  runner-up
+#   ("3", frozenset(candidate_groups))  best-third placed into this slot
+R32 = {
+    73: (("R", "A"), ("R", "B")),
+    74: (("W", "E"), ("3", frozenset("ABCDF"))),
+    75: (("W", "F"), ("R", "C")),
+    76: (("W", "C"), ("R", "F")),
+    77: (("W", "I"), ("3", frozenset("CDFGH"))),
+    78: (("R", "E"), ("R", "I")),
+    79: (("W", "A"), ("3", frozenset("CEFHI"))),
+    80: (("W", "L"), ("3", frozenset("EHIJK"))),
+    81: (("W", "D"), ("3", frozenset("BEFIJ"))),
+    82: (("W", "G"), ("3", frozenset("AEHIJ"))),
+    83: (("R", "K"), ("R", "L")),
+    84: (("W", "H"), ("R", "J")),
+    85: (("W", "B"), ("3", frozenset("EFGIJ"))),
+    86: (("W", "J"), ("R", "H")),
+    87: (("W", "K"), ("3", frozenset("DEIJL"))),
+    88: (("R", "D"), ("R", "G")),
+}
+
+# Later rounds: match_no -> (feeder_match_a, feeder_match_b). Winners fold here.
+TREE = {
+    89: (74, 77), 90: (73, 75), 91: (76, 78), 92: (79, 80),
+    93: (83, 84), 94: (81, 82), 95: (86, 88), 96: (85, 87),
+    97: (89, 90), 98: (93, 94), 99: (91, 92), 100: (95, 96),
+    101: (97, 98), 102: (99, 100),
+    104: (101, 102),  # M103 is the third-place play-off, not simulated
+}
+
+# Third-place slots: match_no -> candidate groups (Annex C).
+THIRD_SLOTS = {m: set(slot[1]) for m, (a, b) in R32.items() for slot in (a, b) if slot[0] == "3"}
+
+# Which "reached the next round" counter a win in each match increments.
+WIN_COUNTER = {}
+for _m in range(73, 89):
+    WIN_COUNTER[_m] = "r16"
+for _m in range(89, 97):
+    WIN_COUNTER[_m] = "qf"
+for _m in range(97, 101):
+    WIN_COUNTER[_m] = "sf"
+for _m in (101, 102):
+    WIN_COUNTER[_m] = "final"
+WIN_COUNTER[104] = "title"
 
 STAGE_NAMES = ["r16", "qf", "sf", "final", "title"]
 
-
-def _partner_group_per_third() -> dict[int, str]:
-    """For each third-slot index, the group of the team it faces in R32."""
-    out = {}
-    for a, b in BRACKET_R32:
-        if a[0] == "3" and b[0] in ("W", "R"):
-            out[a[1]] = b[1]
-        elif b[0] == "3" and a[0] in ("W", "R"):
-            out[b[1]] = a[1]
-        elif a[0] == "3" and b[0] == "3":
-            out.setdefault(a[1], None)
-            out.setdefault(b[1], None)
-    return out
-
-
-PARTNER_GROUP = _partner_group_per_third()
+# Display grouping for the single detailed bracket (Hebrew labels).
+DISPLAY_ROUNDS = [
+    ("1/16", list(range(73, 89))),
+    ("1/8", list(range(89, 97))),
+    ("רבע גמר", [97, 98, 99, 100]),
+    ("חצי גמר", [101, 102]),
+    ("גמר", [104]),
+]
 
 
 def simulate_group(ds, group_id, ratings, rng):
@@ -101,63 +122,103 @@ def simulate_group(ds, group_id, ratings, rng):
     return ranked, rec
 
 
-def _deconflict_thirds(third_ids, third_group):
-    for i in range(len(third_ids)):
-        partner = PARTNER_GROUP.get(i)
-        if partner and third_group[third_ids[i]] == partner:
-            for j in range(len(third_ids)):
-                if i == j:
-                    continue
-                pj = PARTNER_GROUP.get(j)
-                if (third_group[third_ids[j]] != partner
-                        and third_group[third_ids[i]] != pj):
-                    third_ids[i], third_ids[j] = third_ids[j], third_ids[i]
-                    break
-    return third_ids
+def _match_thirds(qualifying_groups: set[str]) -> dict[int, str]:
+    """Assign the 8 qualifying third-place groups to the 8 R32 third-slots.
+
+    Constrained bipartite matching: each slot may only take a group from its
+    Annex-C candidate list. FIFA's table guarantees a perfect matching exists for
+    any 8-of-12 combination. Returns match_no -> group_letter.
+    """
+    # Most-constrained slots first keeps the backtracking shallow.
+    slots = sorted(THIRD_SLOTS, key=lambda m: len(THIRD_SLOTS[m] & qualifying_groups))
+    assign: dict[int, str] = {}
+    used: set[str] = set()
+
+    def bt(i: int) -> bool:
+        if i == len(slots):
+            return True
+        m = slots[i]
+        for g in THIRD_SLOTS[m]:
+            if g in qualifying_groups and g not in used:
+                assign[m] = g
+                used.add(g)
+                if bt(i + 1):
+                    return True
+                used.discard(g)
+                del assign[m]
+        return False
+
+    if not bt(0):
+        # Should not happen with the official table; fill any leftovers safely.
+        for m in slots:
+            if m not in assign:
+                for g in qualifying_groups:
+                    if g not in used:
+                        assign[m] = g
+                        used.add(g)
+                        break
+    return assign
 
 
-def simulate_once(ds, ratings, rng, counts):
-    pos, group_thirds = {}, []
+def _slot_team(slot, pos, third_assign, match_no):
+    kind, key = slot
+    if kind == "W":
+        return pos[(key, 1)]
+    if kind == "R":
+        return pos[(key, 2)]
+    return pos[(third_assign[match_no], 3)]  # ("3", ...)
+
+
+def _resolve_r32(pos, third_assign) -> dict[int, tuple]:
+    """match_no -> (team_a, team_b) for all 16 R32 ties."""
+    out = {}
+    for m, (sa, sb) in R32.items():
+        out[m] = (_slot_team(sa, pos, third_assign, m), _slot_team(sb, pos, third_assign, m))
+    return out
+
+
+def _group_phase(ds, ratings, rng):
+    """Run all 12 groups; return (pos, third_assign, standings)."""
+    pos, group_thirds, standings = {}, [], {}
     for g in ds.groups.group_id:
         ranked, rec = simulate_group(ds, g, ratings, rng)
         pos[(g, 1)], pos[(g, 2)], pos[(g, 3)], pos[(g, 4)] = ranked
-        t3 = ranked[2]
-        group_thirds.append((g, t3, rec[t3]))
+        standings[g] = [(t, rec[t]) for t in ranked]
+        group_thirds.append((g, rec[ranked[2]]))
 
     thirds_sorted = sorted(
         group_thirds,
-        key=lambda x: (x[2]["pts"], x[2]["gf"] - x[2]["ga"], x[2]["gf"], rng.random()),
+        key=lambda x: (x[1]["pts"], x[1]["gf"] - x[1]["ga"], x[1]["gf"], rng.random()),
         reverse=True,
     )
-    third_ids = [t for (_, t, _) in thirds_sorted[:8]]
-    third_group = {t: g for (g, t, _) in thirds_sorted[:8]}
-    third_ids = _deconflict_thirds(third_ids, third_group)
+    qual_groups = {g for (g, _) in thirds_sorted[:8]}
+    third_assign = _match_thirds(qual_groups)
+    return pos, third_assign, standings
+
+
+def simulate_once(ds, ratings, rng, counts):
+    pos, third_assign, _ = _group_phase(ds, ratings, rng)
 
     # tally qualifiers
     for g in ds.groups.group_id:
         counts[pos[(g, 1)]]["knockout"] += 1
         counts[pos[(g, 2)]]["knockout"] += 1
-    for t in third_ids:
-        counts[t]["knockout"] += 1
+    for g in set(third_assign.values()):
+        counts[pos[(g, 3)]]["knockout"] += 1
 
-    def resolve(slot):
-        kind, key = slot
-        if kind == "W":
-            return pos[(key, 1)]
-        if kind == "R":
-            return pos[(key, 2)]
-        return third_ids[key]
-
-    cur = [(resolve(a), resolve(b)) for a, b in BRACKET_R32]
-    for stage in STAGE_NAMES:
-        winners = []
-        for h, a in cur:
-            w = h if engine.knockout_winner(ratings[h], ratings[a], rng) == 0 else a
-            counts[w][stage] += 1
-            winners.append(w)
-        if len(winners) <= 1:
-            break
-        cur = [(winners[i], winners[i + 1]) for i in range(0, len(winners), 2)]
+    r32 = _resolve_r32(pos, third_assign)
+    winners = {}
+    for m in range(73, 89):
+        h, a = r32[m]
+        w = h if engine.knockout_winner(ratings[h], ratings[a], rng) == 0 else a
+        winners[m] = w
+        counts[w][WIN_COUNTER[m]] += 1
+    for m in sorted(TREE):  # ascending: every feeder is resolved before its match
+        fa, fb = TREE[m]
+        h, a = winners[fa], winners[fb]
+        w = h if engine.knockout_winner(ratings[h], ratings[a], rng) == 0 else a
+        winners[m] = w
+        counts[w][WIN_COUNTER[m]] += 1
 
 
 def _play_detail(rh, ra, rng, neutral=True):
@@ -176,38 +237,21 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
     rng = random.Random(seed)
     ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
 
-    pos, group_thirds, standings = {}, [], {}
-    for g in ds.groups.group_id:
-        ranked, rec = simulate_group(ds, g, ratings, rng)
-        pos[(g, 1)], pos[(g, 2)], pos[(g, 3)], pos[(g, 4)] = ranked
-        standings[g] = [(t, rec[t]) for t in ranked]
-        group_thirds.append((g, ranked[2], rec[ranked[2]]))
+    pos, third_assign, _ = _group_phase(ds, ratings, rng)
+    r32 = _resolve_r32(pos, third_assign)
 
-    thirds_sorted = sorted(
-        group_thirds,
-        key=lambda x: (x[2]["pts"], x[2]["gf"] - x[2]["ga"], x[2]["gf"], rng.random()),
-        reverse=True,
-    )
-    third_ids = [t for (_, t, _) in thirds_sorted[:8]]
-    third_group = {t: g for (g, t, _) in thirds_sorted[:8]}
-    third_ids = _deconflict_thirds(third_ids, third_group)
-
-    def resolve(slot):
-        kind, key = slot
-        if kind == "W":
-            return pos[(key, 1)]
-        if kind == "R":
-            return pos[(key, 2)]
-        return third_ids[key]
-
-    cur = [(resolve(a), resolve(b)) for a, b in BRACKET_R32]
-    round_labels = ["1/16", "1/8", "רבע גמר", "חצי גמר", "גמר"]
-    rounds, champion = [], None
-    for label in round_labels:
-        ties, winners = [], []
-        for h, a in cur:
+    winners, rounds = {}, []
+    for label, mlist in DISPLAY_ROUNDS:
+        ties = []
+        for m in mlist:
+            if m in r32:
+                h, a = r32[m]
+            else:
+                fa, fb = TREE[m]
+                h, a = winners[fa], winners[fb]
             wi, hg, ag, note = _play_detail(ratings[h], ratings[a], rng)
             w = h if wi == 0 else a
+            winners[m] = w
             ties.append(
                 {
                     "home": ds.team_name(h, "he"),
@@ -216,18 +260,14 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
                     "winner": ds.team_name(w, "he"),
                 }
             )
-            winners.append(w)
         rounds.append({"label": label, "ties": ties})
-        if len(winners) <= 1:
-            champion = ds.team_name(winners[0], "he")
-            break
-        cur = [(winners[i], winners[i + 1]) for i in range(0, len(winners), 2)]
 
+    champion = ds.team_name(winners[104], "he")
     qualifiers = {
         g: {"1": ds.team_name(pos[(g, 1)], "he"), "2": ds.team_name(pos[(g, 2)], "he")}
         for g in ds.groups.group_id
     }
-    best_thirds = [ds.team_name(t, "he") for t in third_ids]
+    best_thirds = [ds.team_name(pos[(g, 3)], "he") for g in third_assign.values()]
     return {
         "champion": champion,
         "rounds": rounds,
