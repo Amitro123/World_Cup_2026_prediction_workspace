@@ -578,6 +578,50 @@ To validate a different tournament, drop a CSV with the same schema (`date, home
 away, rating_home, rating_away, home_goals, away_goals, neutral, stage`) and pass
 `--csv path` (or `backtest.run("path")`).
 
+### Multi-tournament holdout (CR's headline ask)
+
+A single 64-match tournament is too small to trust a verdict on — tune a constant
+to it and you have overfit, not validated. The holdout harness pools **every**
+`data/backtest_*.csv` it finds and reports each tournament *and* the combined set:
+
+```bash
+python -m src.backtest --holdout         # per-tournament + pooled report
+python -m src.backtest --holdout --json  # structured output
+```
+
+```python
+from src import backtest
+rep = backtest.holdout()                 # auto-discovers data/backtest_*.csv
+backtest.config_compare(backtest.load()) # rank configs on one frame by Brier
+```
+
+The core question the review raised — *do the H2H / form / expert / Elo nudges
+actually earn their place, or just add noise?* — is answered by **measurement,
+not opinion**. `config_compare` scores named configurations
+(`fifa_only`, `+h2h`, `+form`, `+expert`, `+elo`, `all`) and sorts them by Brier.
+A config is only scored when its columns are actually present, so it can never
+silently masquerade as the baseline:
+
+| Config | Needs columns | Tested when present |
+|--------|---------------|---------------------|
+| `fifa_only` | `rating_home/away` | always |
+| `+h2h` | `h2h_sup` (signed, home POV) | H2H supremacy on |
+| `+form` | `form_sup` (signed, home POV) | momentum/form on |
+| `+expert` | `exp_home`, `exp_away` | expert scoreline blend on |
+| `+elo` | `elo_home/away` | best Elo blend weight (auto-swept) |
+| `all` | any of the above | every available signal combined |
+
+**Data integrity note (deliberate).** The harness ships with the one tournament
+we have *verified* ratings + results for (2022). It is built to pool more, but we
+**do not hand-key Elo/FIFA snapshots or scorelines we cannot verify** — stale or
+invented inputs would corrupt the very holdout meant to keep the model honest
+(the review flagged this risk explicitly). To add a tournament, drop a
+`data/backtest_<name>.csv` with verified pre-tournament ratings and real results
+(plus optional `h2h_sup`/`form_sup`/`exp_home`/`exp_away` signal columns); it is
+picked up automatically. Per-match `h2h_sup`/`form_sup` can be generated from the
+API-Football provider as-of each match date (see *Data Ingestion*), keeping them
+reproducible rather than hand-entered.
+
 ---
 
 ## UI Status Icons
@@ -655,6 +699,7 @@ Lightweight self-checking scripts live in `tests/` and can be run directly:
 python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
+python tests/test_holdout.py   # multi-tournament holdout + config comparison gate
 python tests/test_integrity.py # shootout cap + schema validation + data coverage
 python tests/test_providers.py # API-Football adapter (mocked, no network)
 python tests/test_elo.py       # FIFA/Elo blend + production gate
