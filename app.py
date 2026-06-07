@@ -434,11 +434,14 @@ elif view == "שאלות בונוס":
         def flag(d):
             return " ⚠️ (הערכה ברמת שחקן)" if d.get("player_level") else ""
 
+        def tie_flag(d):
+            return " 🔀 (צמד צמוד — תיקו בתוך רעש הסימולציה)" if d.get("tie") else ""
+
         st.subheader("📋 תשובות מומלצות")
         st.dataframe(
             pd.DataFrame(
                 [
-                    {"שאלה": "סגנית האלופה", "תשובה": b["runner_up"]["answer"]},
+                    {"שאלה": "סגנית האלופה" + tie_flag(b["runner_up"]), "תשובה": b["runner_up"]["answer"]},
                     {"שאלה": "מלך הבישולים" + flag(b["top_assists"]), "תשובה": b["top_assists"]["answer"]},
                     {"שאלה": "שער ראשון בטורניר", "תשובה": b["first_goal"]["answer"]},
                     {"שאלה": "שק החבטות (הכי הרבה ספיגות)", "תשובה": b["punching_bag"]["answer"]},
@@ -453,6 +456,9 @@ elif view == "שאלות בונוס":
 
         st.divider()
         st.markdown(f"**סגנית האלופה: {b['runner_up']['answer']}** — {b['runner_up']['note']}")
+        if b["runner_up"].get("tie"):
+            st.info("🔀 הפסגה צפופה: המועמדות המובילות נמצאות בתוך רעש הסימולציה, "
+                    "ולכן הסגנית מדווחת כצמד ולא כנבחרת יחידה.")
         st.dataframe(pd.DataFrame(b["runner_up"]["table"]), use_container_width=True, hide_index=True)
 
         st.markdown(f"**שער ראשון: {b['first_goal']['answer']}** — {b['first_goal']['note']}")
