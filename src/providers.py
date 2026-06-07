@@ -200,8 +200,9 @@ class APIFootball:
             })
         return rows
 
-    def team_matches(self, fifa_code: str, name: str, last: int = 60) -> list[dict]:
-        """A team's last `last` finished matches as RAW rows (both sides kept).
+    def team_matches(self, fifa_code: str, name: str, last: int = 60,
+                     seasons: list[int] | None = None) -> list[dict]:
+        """A team's finished matches as RAW rows (both sides kept).
 
         Unlike `recent_form` (which orients to one team and drops the opponent),
         this preserves both participants so the caller can build cross-team Elo,
@@ -209,13 +210,23 @@ class APIFootball:
         are resolved back to FIFA codes via the cached id map when known, else the
         numeric API id is used as a stable string key.
 
+        By default pulls the last `last` fixtures (one call). The free API plan
+        forbids the `last` parameter, so pass `seasons=[2022, 2023, 2024]` to
+        fetch by season instead (one call per season) — the only path the free
+        tier allows. Results across seasons are concatenated.
+
         Row: {"date","home","away","gh","ga","neutral","comp","league"}.
         """
         tid = self.resolve_team_id(fifa_code, name)
         if tid is None:
             return []
         rev = {v: k for k, v in self._map.items()}  # api id -> FIFA code
-        resp = self._get("/fixtures", {"team": tid, "last": last})
+        if seasons:
+            resp = []
+            for yr in seasons:
+                resp.extend(self._get("/fixtures", {"team": tid, "season": yr}))
+        else:
+            resp = self._get("/fixtures", {"team": tid, "last": last})
         rows: list[dict] = []
         for fx in resp:
             if fx.get("fixture", {}).get("status", {}).get("short") not in FINISHED:

@@ -187,12 +187,15 @@ def write_backtest(name: str, rows: list[dict]) -> str:
 
 # --- network gather (thin; needs a key) --------------------------------------
 
-def gather_history(name: str, team_names: dict, last: int = 60) -> list[dict]:
+def gather_history(name: str, team_names: dict, last: int = 60,
+                   seasons: list[int] | None = None) -> list[dict]:
     """Fetch each team's recent matches via the provider and cache them.
 
-    team_names: {FIFA_CODE: English name}. One API call per team. Merges with any
-    already-cached raw file so you can backfill incrementally (a few teams a day).
-    Returns the merged history (also written to data/holdout_raw/<name>.csv).
+    team_names: {FIFA_CODE: English name}. One API call per team (or one per
+    season when `seasons` is given — required on the free plan, which forbids the
+    `last` parameter). Merges with any already-cached raw file so you can backfill
+    incrementally (a few teams a day). Returns the merged history (also written to
+    data/holdout_raw/<name>.csv).
     """
     from src.providers import RateLimitError, provider_from_env
     provider = provider_from_env(DATA)
@@ -202,7 +205,7 @@ def gather_history(name: str, team_names: dict, last: int = 60) -> list[dict]:
     history = read_raw(name)
     for code, nm in team_names.items():
         try:
-            history.extend(provider.team_matches(code, nm, last=last))
+            history.extend(provider.team_matches(code, nm, last=last, seasons=seasons))
         except RateLimitError:
             print(f"[rate-limit] stopped after partial backfill at {code}; "
                   f"cached so far — resume tomorrow.")
@@ -212,12 +215,13 @@ def gather_history(name: str, team_names: dict, last: int = 60) -> list[dict]:
 
 
 def run(name: str, start: str, end: str, teams, league_substr: str | None = None,
-        fetch: bool = False, team_names: dict | None = None, last: int = 60) -> dict:
+        fetch: bool = False, team_names: dict | None = None, last: int = 60,
+        seasons: list[int] | None = None) -> dict:
     """Build (and optionally fetch) the holdout CSV for one tournament."""
     if fetch:
         if not team_names:
             raise ValueError("--fetch needs team names (CODE=Name,...)")
-        gather_history(name, team_names, last=last)
+        gather_history(name, team_names, last=last, seasons=seasons)
     history = read_raw(name)
     if not history:
         return {"error": f"no history at data/holdout_raw/{name}.csv "
@@ -245,14 +249,21 @@ def main(argv=None) -> None:
                     help="for --fetch: CODE=Name,CODE=Name,... (English names)")
     ap.add_argument("--last", type=int, default=60,
                     help="matches to pull per team when fetching (default 60)")
+    ap.add_argument("--seasons", default=None,
+                    help="comma-separated seasons to fetch per team, e.g. "
+                         "'2022,2023,2024'. Required on the free API plan, which "
+                         "forbids --last. One API call per team per season.")
     args = ap.parse_args(argv)
 
     teams = [t.strip() for t in args.teams.split(",") if t.strip()]
     team_names = None
     if args.names:
         team_names = dict(p.split("=", 1) for p in args.names.split(",") if "=" in p)
+    seasons = None
+    if args.seasons:
+        seasons = [int(s.strip()) for s in args.seasons.split(",") if s.strip()]
     rep = run(args.name, args.start, args.end, teams, league_substr=args.league,
-              fetch=args.fetch, team_names=team_names, last=args.last)
+              fetch=args.fetch, team_names=team_names, last=args.last, seasons=seasons)
     if "error" in rep:
         print(f"[fetch_holdout] {rep['error']}")
         return

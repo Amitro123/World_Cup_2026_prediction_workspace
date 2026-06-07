@@ -1,0 +1,99 @@
+date,home,away,gh,ga,neutral,comp,league
+2023-03-23,HUN,1101,1,0,0,friendly,Friendlies
+2023-03-25,GER,30,2,0,0,friendly,Friendlies
+2023-03-25,SCO,1106,3,0,0,qualifier,Euro Championship - Qualification
+2023-03-27,HUN,1103,3,0,0,qualifier,Euro Championship - Qualification
+2023-03-28,GER,1,2,3,0,friendly,Friendlies
+2023-03-28,SCO,9,2,0,0,qualifier,Euro Championship - Qualification
+2023-06-12,GER,772,3,3,0,friendly,Friendlies
+2023-06-16,24,GER,1,0,0,friendly,Friendlies
+2023-06-17,1090,SCO,1,2,0,qualifier,Euro Championship - Qualification
+2023-06-17,1109,HUN,0,0,0,qualifier,Euro Championship - Qualification
+2023-06-20,GER,8,0,2,0,friendly,Friendlies
+2023-06-20,SCO,1104,2,0,0,qualifier,Euro Championship - Qualification
+2023-06-20,HUN,1097,2,0,0,qualifier,Euro Championship - Qualification
+2023-09-07,14,HUN,1,2,0,qualifier,Euro Championship - Qualification
+2023-09-08,1106,SCO,0,3,0,qualifier,Euro Championship - Qualification
+2023-09-09,GER,12,1,4,0,friendly,Friendlies
+2023-09-10,HUN,770,1,1,0,friendly,Friendlies
+2023-09-12,GER,FRA,2,1,0,friendly,Friendlies
+2023-09-12,SCO,10,1,3,0,friendly,Friendlies
+2023-10-12,9,SCO,2,0,0,qualifier,Euro Championship - Qualification
+2023-10-14,2384,GER,1,3,0,friendly,Friendlies
+2023-10-14,HUN,14,2,1,0,qualifier,Euro Championship - Qualification
+2023-10-17,FRA,SCO,4,1,0,friendly,Friendlies
+2023-10-17,1097,HUN,2,2,0,qualifier,Euro Championship - Qualification
+2023-10-18,16,GER,2,2,0,friendly,Friendlies
+2023-11-16,1104,SCO,2,2,0,qualifier,Euro Championship - Qualification
+2023-11-16,1103,HUN,2,2,0,qualifier,Euro Championship - Qualification
+2023-11-18,GER,777,2,3,0,friendly,Friendlies
+2023-11-19,SCO,1090,3,3,0,qualifier,Euro Championship - Qualification
+2023-11-19,HUN,1109,3,1,0,qualifier,Euro Championship - Qualification
+2023-11-21,775,GER,2,0,0,friendly,Friendlies
+2024-03-22,1118,SCO,4,0,0,friendly,Friendlies
+2024-03-22,HUN,777,1,0,0,friendly,Friendlies
+2024-03-23,FRA,GER,0,2,0,friendly,Friendlies
+2024-03-26,GER,1118,2,1,0,friendly,Friendlies
+2024-03-26,SCO,771,0,1,0,friendly,Friendlies
+2024-03-26,HUN,1111,2,0,0,friendly,Friendlies
+2024-06-03,GER,772,0,0,0,friendly,Friendlies
+2024-06-03,1093,SCO,0,2,0,friendly,Friendlies
+2024-06-04,776,HUN,2,1,0,friendly,Friendlies
+2024-06-07,GER,1117,2,1,0,friendly,Friendlies
+2024-06-07,SCO,1099,2,2,0,friendly,Friendlies
+2024-06-08,HUN,1116,3,0,0,friendly,Friendlies
+2024-06-14,GER,1108,5,1,1,group,Euro Championship
+2024-06-14,GER,SCO,5,1,1,group,Euro Championship
+2024-06-15,HUN,15,1,3,1,group,Euro Championship
+2024-06-19,GER,769,2,0,1,group,Euro Championship
+2024-06-19,SCO,15,1,1,1,group,Euro Championship
+2024-06-19,GER,HUN,2,0,1,group,Euro Championship
+2024-06-23,15,GER,1,1,1,group,Euro Championship
+2024-06-23,SCO,769,0,1,1,group,Euro Championship
+2024-06-23,SCO,HUN,0,1,1,group,Euro Championship
+2024-06-29,GER,21,2,0,1,knockout,Euro Championship
+2024-07-05,9,GER,2,1,1,knockout,Euro Championship
+2024-09-05,SCO,24,2,3,0,competitive,UEFA Nations League
+2024-09-07,GER,769,5,0,0,competitive,UEFA Nations League
+2024-09-07,GER,HUN,5,0,0,competitive,UEFA Nations League
+2024-09-08,27,SCO,2,1,0,competitive,UEFA Nations League
+2024-09-10,1118,GER,2,2,0,competitive,UEFA Nations League
+2024-09-10,HUN,1113,0,0,0,competitive,UEFA Nations League
+2024-10-11,1113,GER,1,2,0,competitive,UEFA Nations League
+2024-10-11,HUN,1118,1,1,0,competitive,UEFA Nations League
+2024-10-12,3,SCO,2,1,0,competitive,UEFA Nations League
+2024-10-14,GER,1118,1,0,0,competitive,UEFA Nations League
+2024-10-14,1113,HUN,0,2,0,competitive,UEFA Nations League
+2024-10-15,SCO,27,0,0,0,competitive,UEFA Nations League
+2024-11-15,SCO,3,1,0,0,competitive,UEFA Nations League
+2024-11-16,GER,1113,7,0,0,competitive,UEFA Nations League
+2024-11-16,1118,HUN,4,0,0,competitive,UEFA Nations League
+2024-11-18,24,SCO,1,2,0,competitive,UEFA Nations League
+2024-11-19,769,GER,1,1,0,competitive,UEFA Nations League
+2024-11-19,HUN,GER,1,1,0,competitive,UEFA Nations League
+2025-03-20,768,GER,1,2,1,knockout,UEFA Nations League
+2025-03-20,1117,SCO,0,1,1,knockout,UEFA Nations League
+2025-03-20,777,HUN,3,1,1,knockout,UEFA Nations League
+2025-03-23,GER,768,3,3,1,knockout,UEFA Nations League
+2025-03-23,SCO,1117,0,3,1,knockout,UEFA Nations League
+2025-03-23,HUN,777,0,3,1,knockout,UEFA Nations League
+2025-06-04,GER,27,1,2,1,semifinal,UEFA Nations League
+2025-06-08,GER,FRA,0,2,1,final,UEFA Nations League
+2025-09-04,773,GER,2,0,0,qualifier,World Cup - Qualification Europe
+2025-09-05,21,SCO,0,0,0,qualifier,World Cup - Qualification Europe
+2025-09-06,776,HUN,2,2,0,qualifier,World Cup - Qualification Europe
+2025-09-07,GER,771,3,1,0,qualifier,World Cup - Qualification Europe
+2025-09-08,1100,SCO,0,2,0,qualifier,World Cup - Qualification Europe
+2025-09-09,HUN,27,2,3,0,qualifier,World Cup - Qualification Europe
+2025-10-09,SCO,1117,3,1,0,qualifier,World Cup - Qualification Europe
+2025-10-10,GER,1102,4,0,0,qualifier,World Cup - Qualification Europe
+2025-10-11,HUN,1094,2,0,0,qualifier,World Cup - Qualification Europe
+2025-10-12,SCO,1100,2,1,0,qualifier,World Cup - Qualification Europe
+2025-10-13,771,GER,0,1,0,qualifier,World Cup - Qualification Europe
+2025-10-14,27,HUN,2,2,0,qualifier,World Cup - Qualification Europe
+2025-11-13,1094,HUN,0,1,0,qualifier,World Cup - Qualification Europe
+2025-11-14,1102,GER,0,2,0,qualifier,World Cup - Qualification Europe
+2025-11-15,1117,SCO,3,2,0,qualifier,World Cup - Qualification Europe
+2025-11-16,HUN,776,2,3,0,qualifier,World Cup - Qualification Europe
+2025-11-17,GER,773,6,0,0,qualifier,World Cup - Qualification Europe
+2025-11-18,SCO,21,4,2,0,qualifier,World Cup - Qualification Europe

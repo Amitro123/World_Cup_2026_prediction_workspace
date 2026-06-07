@@ -40,12 +40,17 @@ import math
 from dataclasses import dataclass
 
 # --- Tunable model constants (FIFA-points Dixon-Coles) -----------------------
-K = 200.0            # FIFA points per 1 goal of supremacy
+K = 240.0            # FIFA points per 1 goal of supremacy (calibrated to the
+                     # bookmaker market 2026-06: K=200 was overconfident on
+                     # favourites; K=240 is the knee of the market-KL/holdout-
+                     # Brier trade-off — most of the alignment gain, ~0.4% Brier cost)
 BASE_TOTAL = 2.6     # neutral expected total goals for an even tie
 FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
 DC_RHO = -0.06       # Dixon-Coles low-score dependence
 HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
-EXPERT_W = 0.55      # weight on the model vs an expert scoreline target
+EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
+                     # over-weighted the expert and pulled the model away from
+                     # the market — 0.85 (15% expert) best matches market 1X2
 
 # --- Host nations (World Cup 2026 co-hosts) ----------------------------------
 # 2026 is played across the USA, Mexico and Canada, so *every* match is at a
@@ -381,14 +386,18 @@ def _grid_probs(
     dixon_coles=True applies the low-score dependence correction (pre-match only;
     not meaningful once a base score is in play).
     """
+    # Precompute each side's Poisson column ONCE (the away PMF is independent of
+    # i, so recomputing it inside the inner loop was N² _poisson_pmf calls).
+    pmf_home = [_poisson_pmf(i, lam_home) for i in range(MAX_GOALS + 1)]
+    pmf_away = [_poisson_pmf(j, lam_away) for j in range(MAX_GOALS + 1)]
     p_home = p_draw = p_away = 0.0
     for i in range(MAX_GOALS + 1):
-        ph = _poisson_pmf(i, lam_home)
+        ph = pmf_home[i]
+        fh = base_home + i
         for j in range(MAX_GOALS + 1):
-            pa = _poisson_pmf(j, lam_away)
             tau = _dc_tau(i, j, lam_home, lam_away) if dixon_coles else 1.0
-            prob = ph * pa * tau
-            fh, fa = base_home + i, base_away + j
+            prob = ph * pmf_away[j] * tau
+            fa = base_away + j
             if fh > fa:
                 p_home += prob
             elif fh == fa:

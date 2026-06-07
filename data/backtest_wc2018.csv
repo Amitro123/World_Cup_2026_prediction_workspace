@@ -1,0 +1,65 @@
+date,home,away,rating_home,rating_away,home_goals,away_goals,neutral,stage,form_sup,h2h_sup
+2018-06-14,Russia,Saudi Arabia,1347.5,1288.7,5,0,0,competitive,-0.0526,-0.0027
+2018-06-15,Egypt,Uruguay,1349.7,1550.3,0,1,1,competitive,-0.1037,-0.0116
+2018-06-15,Morocco,Iran,1421.2,1486.9,0,1,1,competitive,0.0378,0.0
+2018-06-15,Portugal,Spain,1612.6,1699.7,3,3,1,competitive,-0.0298,0.0094
+2018-06-16,France,Australia,1632.7,1429.5,2,1,1,competitive,0.0856,0.0656
+2018-06-16,Argentina,Iceland,1648.2,1425.5,1,1,1,competitive,0.0719,0.0
+2018-06-16,Peru,Denmark,1601.0,1493.0,0,1,1,competitive,0.041,0.0
+2018-06-16,Croatia,Nigeria,1507.4,1338.5,2,0,1,competitive,0.0841,0.0
+2018-06-17,Costa Rica,Serbia,1462.7,1417.4,0,1,1,competitive,-0.0881,0.0
+2018-06-17,Germany,Mexico,1720.4,1540.3,0,1,1,competitive,0.0609,0.1273
+2018-06-17,Brazil,Switzerland,1792.1,1533.6,1,1,1,competitive,0.0402,-0.0065
+2018-06-18,Sweden,South Korea,1440.9,1399.4,1,0,1,competitive,0.0186,0.0035
+2018-06-18,Belgium,Panama,1595.0,1381.3,3,0,1,competitive,0.2669,0.0
+2018-06-18,Tunisia,England,1373.9,1600.5,1,2,1,competitive,-0.1064,-0.0115
+2018-06-19,Colombia,Japan,1594.2,1373.0,1,2,1,competitive,0.0304,0.091
+2018-06-19,Poland,Senegal,1480.9,1461.9,1,2,1,competitive,-0.0029,0.0
+2018-06-19,Russia,Egypt,1347.5,1349.7,3,1,0,competitive,-0.0786,0.0
+2018-06-20,Portugal,Morocco,1612.6,1421.2,1,0,1,competitive,0.0031,-0.003
+2018-06-20,Uruguay,Saudi Arabia,1550.3,1288.7,1,0,1,competitive,0.1298,-0.0034
+2018-06-20,Iran,Spain,1486.9,1699.7,0,1,1,competitive,-0.0707,0.0
+2018-06-21,Denmark,Australia,1493.0,1429.5,1,1,1,competitive,0.0557,0.0242
+2018-06-21,France,Peru,1632.7,1601.0,1,0,1,competitive,-0.0111,-0.0004
+2018-06-21,Argentina,Croatia,1648.2,1507.4,0,3,1,competitive,0.0338,0.013
+2018-06-22,Brazil,Costa Rica,1792.1,1462.7,2,0,1,competitive,0.2365,0.0933
+2018-06-22,Nigeria,Iceland,1338.5,1425.5,2,0,1,competitive,-0.046,-0.001
+2018-06-22,Serbia,Switzerland,1417.4,1533.6,1,2,1,competitive,-0.1083,0.0065
+2018-06-23,Belgium,Tunisia,1595.0,1373.9,5,2,1,competitive,0.1726,0.0122
+2018-06-23,South Korea,Mexico,1399.4,1540.3,1,2,1,competitive,-0.0858,-0.0491
+2018-06-23,Germany,Sweden,1720.4,1440.9,2,1,1,competitive,0.128,0.0738
+2018-06-24,England,Panama,1600.5,1381.3,6,1,1,competitive,0.2007,0.0
+2018-06-24,Japan,Senegal,1373.0,1461.9,2,2,1,competitive,-0.1184,-0.0104
+2018-06-24,Poland,Colombia,1480.9,1594.2,0,3,1,competitive,0.0851,-0.0071
+2018-06-25,Russia,Uruguay,1347.5,1550.3,0,3,0,competitive,-0.1824,0.0005
+2018-06-25,Saudi Arabia,Egypt,1288.7,1349.7,2,1,1,competitive,-0.0261,0.0162
+2018-06-25,Spain,Morocco,1699.7,1421.2,2,2,1,competitive,0.0329,0.0001
+2018-06-25,Iran,Portugal,1486.9,1612.6,1,1,1,competitive,-0.0409,-0.0285
+2018-06-26,Australia,Peru,1429.5,1601.0,0,2,1,competitive,-0.0967,0.0
+2018-06-26,Denmark,France,1493.0,1632.7,0,0,1,competitive,-0.0298,-0.051
+2018-06-26,Nigeria,Argentina,1338.5,1648.2,1,2,1,competitive,-0.1179,-0.0127
+2018-06-26,Iceland,Croatia,1425.5,1507.4,1,2,1,competitive,-0.0381,-0.0837
+2018-06-27,South Korea,Germany,1399.4,1720.4,2,0,1,competitive,-0.1466,-0.0033
+2018-06-27,Mexico,Sweden,1540.3,1440.9,0,3,1,competitive,0.0671,-0.0059
+2018-06-27,Serbia,Brazil,1417.4,1792.1,0,2,1,competitive,-0.1485,-0.0194
+2018-06-27,Switzerland,Costa Rica,1533.6,1462.7,2,2,1,competitive,0.1963,0.0023
+2018-06-28,Japan,Poland,1373.0,1480.9,0,1,1,competitive,-0.1155,0.0298
+2018-06-28,Senegal,Colombia,1461.9,1594.2,0,1,1,competitive,0.088,-0.0187
+2018-06-28,Panama,Tunisia,1381.3,1373.9,1,2,1,competitive,-0.0943,0.0
+2018-06-28,England,Belgium,1600.5,1595.0,0,1,1,competitive,-0.0662,0.0153
+2018-06-30,France,Argentina,1632.7,1648.2,4,3,1,competitive,0.0692,-0.0213
+2018-06-30,Uruguay,Portugal,1550.3,1612.6,2,1,1,competitive,-0.0963,-0.0002
+2018-07-01,Russia,Spain,1347.5,1699.7,1,1,0,competitive,-0.3085,-0.0885
+2018-07-01,Croatia,Denmark,1507.4,1493.0,1,1,1,competitive,-0.0732,0.0065
+2018-07-02,Brazil,Mexico,1792.1,1540.3,2,0,1,competitive,0.1371,0.0448
+2018-07-02,Belgium,Japan,1595.0,1373.0,3,2,1,competitive,0.234,-0.0549
+2018-07-03,Sweden,Switzerland,1440.9,1533.6,1,0,1,competitive,-0.1641,0.0004
+2018-07-03,Colombia,England,1594.2,1600.5,1,1,1,competitive,-0.1373,-0.0163
+2018-07-06,Uruguay,France,1550.3,1632.7,0,2,1,competitive,-0.0807,0.008
+2018-07-06,Brazil,Belgium,1792.1,1595.0,1,2,1,competitive,-0.0078,0.0187
+2018-07-07,Sweden,England,1440.9,1600.5,0,2,1,competitive,-0.1459,-0.0022
+2018-07-07,Russia,Croatia,1347.5,1507.4,2,2,0,competitive,-0.16,-0.0273
+2018-07-10,France,Belgium,1632.7,1595.0,1,0,1,competitive,-0.0735,0.0044
+2018-07-11,Croatia,England,1507.4,1600.5,2,1,1,competitive,-0.1103,-0.0783
+2018-07-14,Belgium,England,1595.0,1600.5,2,0,1,competitive,0.0662,-0.0153
+2018-07-15,France,Croatia,1632.7,1507.4,4,2,1,competitive,0.103,0.0168
