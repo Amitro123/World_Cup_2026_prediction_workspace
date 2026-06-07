@@ -200,6 +200,48 @@ class APIFootball:
             })
         return rows
 
+    def team_matches(self, fifa_code: str, name: str, last: int = 60) -> list[dict]:
+        """A team's last `last` finished matches as RAW rows (both sides kept).
+
+        Unlike `recent_form` (which orients to one team and drops the opponent),
+        this preserves both participants so the caller can build cross-team Elo,
+        head-to-head and momentum locally from a handful of calls. Opponent codes
+        are resolved back to FIFA codes via the cached id map when known, else the
+        numeric API id is used as a stable string key.
+
+        Row: {"date","home","away","gh","ga","neutral","comp","league"}.
+        """
+        tid = self.resolve_team_id(fifa_code, name)
+        if tid is None:
+            return []
+        rev = {v: k for k, v in self._map.items()}  # api id -> FIFA code
+        resp = self._get("/fixtures", {"team": tid, "last": last})
+        rows: list[dict] = []
+        for fx in resp:
+            if fx.get("fixture", {}).get("status", {}).get("short") not in FINISHED:
+                continue
+            goals = fx.get("goals", {})
+            teams = fx.get("teams", {})
+            gh, ga = goals.get("home"), goals.get("away")
+            hid = teams.get("home", {}).get("id")
+            aid = teams.get("away", {}).get("id")
+            if gh is None or ga is None or hid is None or aid is None:
+                continue
+            league = fx.get("league", {})
+            comp = _classify(league.get("name"), league.get("round"))
+            rows.append({
+                "date": str(fx.get("fixture", {}).get("date", ""))[:10],
+                "home": rev.get(int(hid), str(hid)),
+                "away": rev.get(int(aid), str(aid)),
+                "gh": int(gh), "ga": int(ga),
+                # major-tournament finals are at neutral venues; qualifiers and
+                # friendlies are home/away. A reasonable, documented default.
+                "neutral": comp in ("group", "knockout", "semifinal", "final"),
+                "comp": comp,
+                "league": str(league.get("name") or ""),
+            })
+        return rows
+
     def head_to_head(self, home_id: str, away_id: str, home_name: str,
                      away_name: str, last: int = 10, cutoff: int = 2018) -> list[dict]:
         """Recent meetings as h2h.csv rows, oriented to home_id (team_a)."""

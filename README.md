@@ -62,12 +62,15 @@ WorldCup2026/
 │   ├── models.py             # DataStore: data layer + update_match_state + Hermes API
 │   ├── providers.py          # API-Football adapter for form/h2h ingestion
 │   ├── datameta.py           # freshness ledger (data/.data_meta.json)
+│   ├── backtest.py           # retrospective validation + multi-tournament holdout
+│   ├── elo.py                # derived World Football Elo (pre-tournament ratings)
 │   └── knockout.py           # Monte-Carlo simulation of the whole tournament
 ├── app.py                    # Streamlit dashboard (Hebrew / RTL)
 ├── hermes.py                 # CLI bridge for the Hermes agent (news + briefing)
 ├── scout.py                  # injury / suspension news scout (pre-match)
 ├── fetch_h2h.py              # refreshes h2h.csv (API-Football, scrape fallback)
 ├── fetch_form.py             # refreshes form.csv (API-Football, scrape fallback)
+├── fetch_holdout.py          # builds a holdout backtest CSV (derived Elo, no leakage)
 ├── build_data.py             # builds fifa_points, expert_scores.csv, odds.csv, predictions
 ├── build_excel.py            # builds the Excel template
 └── requirements.txt
@@ -611,16 +614,46 @@ silently masquerade as the baseline:
 | `+elo` | `elo_home/away` | best Elo blend weight (auto-swept) |
 | `all` | any of the above | every available signal combined |
 
-**Data integrity note (deliberate).** The harness ships with the one tournament
-we have *verified* ratings + results for (2022). It is built to pool more, but we
-**do not hand-key Elo/FIFA snapshots or scorelines we cannot verify** — stale or
-invented inputs would corrupt the very holdout meant to keep the model honest
-(the review flagged this risk explicitly). To add a tournament, drop a
-`data/backtest_<name>.csv` with verified pre-tournament ratings and real results
-(plus optional `h2h_sup`/`form_sup`/`exp_home`/`exp_away` signal columns); it is
-picked up automatically. Per-match `h2h_sup`/`form_sup` can be generated from the
-API-Football provider as-of each match date (see *Data Ingestion*), keeping them
-reproducible rather than hand-entered.
+**Data integrity note (deliberate).** We **do not hand-key Elo/FIFA snapshots or
+scorelines we cannot verify** — stale or invented inputs would corrupt the very
+holdout meant to keep the model honest (the review flagged this explicitly). The
+2022 file uses verified FIFA points; every *other* tournament's ratings are
+**derived, not sourced** (next section).
+
+### Adding tournaments: derived ratings, no hand-keying (`fetch_holdout.py`)
+
+Pre-tournament FIFA points for past dates aren't cleanly available, so instead of
+sourcing ratings we **derive** them. `src/elo.py` runs the standard World
+Football Elo algorithm forward over real results and stops at the tournament's
+start date (`snapshot_before`), then recentres onto the FIFA-points scale (a pure
+shift — every rating gap, and thus every supremacy the engine computes, is
+preserved). This is reproducible, leakage-free (a tournament never sees its own
+results), and doubles as the Elo capability the review asked for.
+
+`fetch_holdout.py` assembles a ready-to-score `data/backtest_<name>.csv`
+(ratings + real results + as-of-start `form_sup`/`h2h_sup`) two ways:
+
+```bash
+# Online: one API-Football call per team fills + caches the raw history.
+# Backfill a few teams a day if you like — no need to pull everything at once.
+python fetch_holdout.py --name euro2024 --start 2024-06-14 --end 2024-07-14 \
+    --teams GER,SCO,HUN,SUI,ESP,CRO,ITA,ALB,...  --league Euro \
+    --fetch --names GER=Germany,SCO=Scotland,...
+
+# Offline: drop verified results in data/holdout_raw/euro2024.csv
+# (date,home,away,gh,ga,neutral,comp,league) and build with no key:
+python fetch_holdout.py --name euro2024 --start 2024-06-14 --end 2024-07-14 \
+    --teams GER,SCO,HUN,SUI,...  --league Euro
+
+python -m src.backtest --holdout      # now pools 2022 + euro2024 + ...
+```
+
+Because the base rating *is* derived Elo, the config comparison for these
+tournaments measures `fifa_only` (Elo base) vs `+h2h` / `+form` / `all` — exactly
+the "do the nudges earn their place?" question, now answerable across tournaments.
+The H2H/form signals are computed locally from the same fetched histories
+(`engine.h2h_supremacy` / `engine.form_supremacy`), so no extra API calls and
+nothing hand-entered.
 
 ---
 
@@ -703,6 +736,8 @@ python tests/test_holdout.py   # multi-tournament holdout + config comparison ga
 python tests/test_integrity.py # shootout cap + schema validation + data coverage
 python tests/test_providers.py # API-Football adapter (mocked, no network)
 python tests/test_elo.py       # FIFA/Elo blend + production gate
+python tests/test_elo_ratings.py  # derived World Football Elo (src/elo.py)
+python tests/test_fetch_holdout.py # holdout CSV builder (derived ratings, no leakage)
 python tests/test_hosts.py     # host-only home advantage (USA/MEX/CAN)
 ```
 
