@@ -30,23 +30,33 @@ OPENER_TEAMS = ("MEX", "RSA")
 
 
 def _group_goal_sim(ds, n: int, rng) -> tuple[dict, dict, dict]:
-    """Monte-Carlo the 72 group games -> expected goals for/against per team."""
+    """Monte-Carlo the 72 group games -> expected goals for/against per team.
+
+    Fixtures (status, expert, h2h/form supremacy) are resolved to plain tuples
+    ONCE; the n-loop then touches no pandas. Iterating `DataFrame.iterrows()` and
+    re-querying `expert_for` per game inside the loop was the dominant cost.
+    """
     ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
     h2h = knockout.build_h2h(ds)
     form = knockout.build_form(ds)
+    # Pre-resolve every fixture: (home, away, finished, hg, ag, expert, h2h_sup, form_sup)
+    fixtures: list[tuple] = []
+    for _, m in ds.matches.iterrows():
+        h, a = m.home_id, m.away_id
+        finished = str(m.status) == "finished" and _notna(m.home_goals)
+        hg = int(m.home_goals) if finished else 0
+        ag = int(m.away_goals) if finished else 0
+        fixtures.append((h, a, finished, hg, ag, ds.expert_for(m.match_id),
+                         h2h.get((h, a), 0.0), knockout._form_sup(form, h, a)))
+
     gf = defaultdict(float)
     ga = defaultdict(float)
-    games = ds.matches
     for _ in range(n):
-        for _, m in games.iterrows():
-            h, a = m.home_id, m.away_id
-            if str(m.status) == "finished" and _notna(m.home_goals):
-                hg, ag = int(m.home_goals), int(m.away_goals)
-            else:
+        for h, a, finished, hg, ag, expert, hsup, fsup in fixtures:
+            if not finished:
                 hg, ag = engine.sample_score(
                     ratings[h], ratings[a], rng,
-                    expert=ds.expert_for(m.match_id), h2h_sup=h2h.get((h, a), 0.0),
-                    form_sup=knockout._form_sup(form, h, a),
+                    expert=expert, h2h_sup=hsup, form_sup=fsup,
                 )
             gf[h] += hg; ga[h] += ag
             gf[a] += ag; ga[a] += hg

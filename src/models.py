@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from . import engine
+from . import engine, oddslib, playerprops
 
 DATA_FILES = {
     "groups": "groups.csv",
@@ -33,7 +33,14 @@ DATA_FILES = {
     "players": "players.csv",
     "h2h": "h2h.csv",
     "form": "form.csv",
+    # bookmaker anchors (both optional; absent files leave the anchors dormant)
+    "market_odds": "market_odds.csv",        # 1X2 closing odds per match
+    "players_market": "players_market.csv",  # scorer/assist props per match
 }
+
+# Flat per-selection vig assumed when de-vigging single scorer/assist markets
+# (they are not mutually exclusive, so a proportional de-vig is impossible).
+PLAYER_MARKET_MARGIN = 0.06
 
 NEWS_COLUMNS = [
     "adj_id", "match_id", "team_id", "kind", "value",
@@ -58,6 +65,8 @@ class DataStore:
     players: pd.DataFrame
     h2h: pd.DataFrame
     form: pd.DataFrame
+    market_odds: pd.DataFrame = field(default_factory=pd.DataFrame)
+    players_market: pd.DataFrame = field(default_factory=pd.DataFrame)
     model: engine.ProbabilityModel = field(default_factory=engine.ProbabilityModel)
 
     # --- loading / saving ---------------------------------------------------
@@ -87,6 +96,8 @@ class DataStore:
             players=_read("players", required=False),
             h2h=_read("h2h", required=False),
             form=_read("form", required=False),
+            market_odds=_read("market_odds", required=False),
+            players_market=_read("players_market", required=False),
             model=model or engine.ProbabilityModel(),
         )
 
@@ -355,6 +366,106 @@ class DataStore:
         return engine.form_supremacy(
             self.team_form(home_id, ref_date), self.team_form(away_id, ref_date)
         )
+
+    # --- bookmaker anchors (optional) --------------------------------------
+    def market_for(self, match_id: str) -> dict | None:
+        """De-vigged 1X2 market probabilities for a match, or None.
+
+        Reads market_odds.csv (match_id + either dec_home/dec_draw/dec_away or
+        pre-computed p_home/p_draw/p_away). Returns None when the file is absent
+        or the row is unusable, so the anchor stays dormant until you add odds.
+        """
+        if self.market_odds is None or self.market_odds.empty:
+            return None
+        if "match_id" not in self.market_odds.columns:
+            return None
+        rows = self.market_odds.loc[self.market_odds.match_id == match_id]
+        if rows.empty:
+            return None
+        return oddslib.market_from_row(rows.iloc[0])
+
+    def market_anchor(self, match_id: str, apply_news: bool = False) -> dict | None:
+        """Model vs market 1X2 diagnostic for one match (None if no market row).
+
+        Compares the engine's pre-match probabilities to the de-vigged closing
+        odds: KL divergence, the largest per-outcome gap, whether they agree on
+        the favourite, and a `flag` when they disagree enough to warrant a look.
+        """
+        market = self.market_for(match_id)
+        if market is None:
+            return None
+        mp = self.pre_match_probs(match_id, apply_news=apply_news)
+        model = {k: mp[k] for k in oddslib.OUTCOMES}
+        diag = oddslib.compare(model, market)
+        return {
+            "match_id": match_id,
+            "model": {k: round(model[k], 4) for k in oddslib.OUTCOMES},
+            "market": {k: round(market[k], 4) for k in oddslib.OUTCOMES},
+            **{k: (round(v, 4) if isinstance(v, float) else v)
+               for k, v in diag.items()},
+        }
+
+    def market_anchors(self, apply_news: bool = False) -> list[dict]:
+        """market_anchor for every match that has a market row, flagged first."""
+        out = []
+        for mid in self.matches["match_id"].astype(str):
+            a = self.market_anchor(mid, apply_news=apply_news)
+            if a is not None:
+                out.append(a)
+        out.sort(key=lambda a: (not a["flag"], -abs(a["max_gap"])))
+        return out
+
+    def player_props(self, match_id: str, apply_news: bool = False) -> list[dict]:
+        """Per-player score/assist props for a match (model, + market if present).
+
+        Uses the match's expected goals (engine output) and each squad player's
+        goal_share / assist_share to compute P(score), P(assist) and
+        P(score or assist). When players_market.csv carries decimal odds for the
+        same (match_id, player), they are de-vigged and compared. Returns [] if
+        there is no player data for the two teams. Sorted by model P(score|assist).
+        """
+        if self.players is None or self.players.empty:
+            return []
+        m = self.match(match_id)
+        mp = self.pre_match_probs(match_id, apply_news=apply_news)
+        lam = {m.home_id: mp.get("lambda_home", 0.0),
+               m.away_id: mp.get("lambda_away", 0.0)}
+        squad = self.players[self.players.team_id.isin([m.home_id, m.away_id])]
+        market_rows = None
+        if (self.players_market is not None and not self.players_market.empty
+                and "match_id" in self.players_market.columns):
+            market_rows = self.players_market.loc[
+                self.players_market.match_id == match_id]
+
+        out = []
+        for p in squad.itertuples():
+            tid = p.team_id
+            model = playerprops.player_match_props(
+                float(p.goal_share), float(p.assist_share), lam.get(tid, 0.0))
+            entry = {
+                "match_id": match_id,
+                "team_id": tid,
+                "name_he": getattr(p, "name_he", ""),
+                "name_en": getattr(p, "name_en", ""),
+                "model": {k: round(model[k], 4) for k in
+                          ("p_score", "p_assist", "p_score_or_assist")},
+                "exp_goals": round(model["exp_goals"], 3),
+                "exp_assists": round(model["exp_assists"], 3),
+            }
+            if market_rows is not None and not market_rows.empty:
+                name_en = getattr(p, "name_en", "")
+                mr = market_rows.loc[
+                    market_rows.get("name_en", "").astype(str) == str(name_en)] \
+                    if "name_en" in market_rows.columns else market_rows.iloc[0:0]
+                if not mr.empty:
+                    market = playerprops.market_props_from_row(
+                        mr.iloc[0], margin=PLAYER_MARKET_MARGIN)
+                    entry["market"] = {k: (round(v, 4) if v is not None else None)
+                                       for k, v in market.items()}
+                    entry["compare"] = playerprops.compare_props(model, market)
+            out.append(entry)
+        out.sort(key=lambda e: -e["model"]["p_score_or_assist"])
+        return out
 
     # --- core operation -----------------------------------------------------
     def update_match_state(

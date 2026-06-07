@@ -55,6 +55,8 @@ WorldCup2026/
 │   ├── h2h.csv               # head-to-head past meetings (affects the model)
 │   ├── form.csv              # recent-form / momentum per team (affects the model)
 │   ├── news_adjustments.csv  # Hermes pre-match updates (injuries / line moves)
+│   ├── market_odds.csv       # bookmaker 1X2 odds (anchor; dormant until filled)
+│   ├── players_market.csv    # bookmaker scorer/assist props (dormant; no free feed)
 │   ├── cowork_model.json     # FIFA points + base ratings from a prior session
 │   └── cowork_expert.json    # raw expert scorelines from a prior session
 ├── src/
@@ -64,6 +66,8 @@ WorldCup2026/
 │   ├── datameta.py           # freshness ledger (data/.data_meta.json)
 │   ├── backtest.py           # retrospective validation + multi-tournament holdout
 │   ├── elo.py                # derived World Football Elo (pre-tournament ratings)
+│   ├── oddslib.py            # bookmaker-odds math: de-vig + model-vs-market divergence
+│   ├── playerprops.py        # per-match player score/assist props (model + market)
 │   └── knockout.py           # Monte-Carlo simulation of the whole tournament
 ├── app.py                    # Streamlit dashboard (Hebrew / RTL)
 ├── hermes.py                 # CLI bridge for the Hermes agent (news + briefing)
@@ -71,6 +75,8 @@ WorldCup2026/
 ├── fetch_h2h.py              # refreshes h2h.csv (API-Football, scrape fallback)
 ├── fetch_form.py             # refreshes form.csv (API-Football, scrape fallback)
 ├── fetch_holdout.py          # builds a holdout backtest CSV (derived Elo, no leakage)
+├── fetch_odds.py             # fills market_odds.csv (The Odds API, free tier)
+├── fetch_player_props.py     # (dormant) parses player-prop payloads -> players_market.csv
 ├── build_data.py             # builds fifa_points, expert_scores.csv, odds.csv, predictions
 ├── build_excel.py            # builds the Excel template
 └── requirements.txt
@@ -213,7 +219,39 @@ Both return a dict with `p_home`, `p_draw`, `p_away`, and the underlying
 | Column | Type | Description |
 |--------|------|-------------|
 | `match_id` | str | Match key |
-| `p_home` / `p_draw` / `p_away` | float | Model-derived 1X2 probabilities |
+| `p_home` / `p_draw` / `p_away` | float | **Model-derived** 1X2 probabilities (engine output, not a bookmaker) |
+
+> Despite the name, `odds.csv` holds the model's own probabilities. **Bookmaker**
+> odds live in `market_odds.csv` (below) and are compared to the model in the
+> "מול בוקמייקרים" dashboard view.
+
+### `market_odds.csv` (bookmaker anchor — optional)
+Closing/pre-match **bookmaker** 1X2 odds, used to anchor and sanity-check the
+model (the CR's headline recommendation). De-vigged proportionally by
+`src/oddslib.py`. Ships as a header-only file (dormant) until you add rows.
+Fill it by hand or with `python fetch_odds.py` (The Odds API, free tier).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | Match key |
+| `dec_home` / `dec_draw` / `dec_away` | float | Decimal 1X2 odds (preferred), OR… |
+| `p_home` / `p_draw` / `p_away` | float | …pre-computed implied probs (used only if decimals absent) |
+| `bookmaker` | str | Source book (optional) |
+| `captured_at` | str | `YYYY-MM-DD` snapshot date (optional) |
+
+### `players_market.csv` (player props — optional, dormant)
+Per-match anytime **scorer / assist** odds, de-vigged with a flat per-selection
+margin (these markets are not mutually exclusive). No free feed exists, so this
+ships dormant; the model props in `src/playerprops.py` display with or without it.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | str | Match key |
+| `team_id` | str | Player's team code |
+| `name_en` | str | Player name (matched to `players.csv` `name_en`) |
+| `name_he` | str | Hebrew name (optional) |
+| `score_odds` / `assist_odds` / `score_or_assist_odds` | float | Decimal odds (each optional) |
+| `bookmaker` / `captured_at` | str | Source / snapshot date (optional) |
 
 ### `expert_scores.csv`
 | Column | Type | Description |
@@ -657,6 +695,41 @@ nothing hand-entered.
 
 ---
 
+## Bookmaker Anchor (`fetch_odds.py`, `src/oddslib.py`)
+
+Closing 1X2 odds are the gold standard for football calibration, so comparing the
+model to the market catches miscalibration we can't see from the inside (the CR's
+headline recommendation). The math is pure and unit-tested in `src/oddslib.py`:
+implied prob = `1/decimal`, de-vigged **proportionally** across the three
+mutually-exclusive outcomes (divide by the overround sum). `DataStore.market_anchor`
+then reports KL divergence, the largest per-outcome gap, whether model and market
+agree on the favourite, and a `flag` when they diverge ≥10 pts — surfaced in the
+**"מול בוקמייקרים"** dashboard view.
+
+```bash
+# 1. Free key (≈500 req/month, no card): https://the-odds-api.com
+# 2. add it to .env:  ODDS_API_KEY=...
+# 3. fill data/market_odds.csv:
+python fetch_odds.py --sport soccer_fifa_world_cup
+#    (or parse a saved payload offline:  python fetch_odds.py --from-json saved.json)
+```
+
+With no key the anchor simply stays dormant — `market_odds.csv` ships header-only
+and nothing else depends on it. You can also hand-enter decimals into the CSV.
+
+### Player props (`src/playerprops.py`) — dormant
+
+The same panel shows per-match **anytime scorer / assist** probabilities. The
+model converts each player's `goal_share`/`assist_share` × the team's expected
+goals into Poisson `P(≥1)` (`P(score)=1-e^(-λ)`); "score or assist" combines the
+two independent rates. When bookmaker odds are present in `players_market.csv`
+they are de-vigged (flat per-selection margin) and compared side by side. There
+is **no free player-props feed**, so this ships dormant — `fetch_player_props.py`
+has a tested parser ready for a paid feed or a saved JSON payload, but scrapes
+nothing.
+
+---
+
 ## UI Status Icons
 
 | Icon | Meaning |
@@ -739,6 +812,11 @@ python tests/test_elo.py       # FIFA/Elo blend + production gate
 python tests/test_elo_ratings.py  # derived World Football Elo (src/elo.py)
 python tests/test_fetch_holdout.py # holdout CSV builder (derived ratings, no leakage)
 python tests/test_hosts.py     # host-only home advantage (USA/MEX/CAN)
+python tests/test_oddslib.py   # bookmaker-odds math: de-vig + divergence
+python tests/test_playerprops.py   # per-match player score/assist props
+python tests/test_market_anchor.py # DataStore market anchor + player props (integration)
+python tests/test_fetch_odds.py    # The Odds API 1X2 parser (no network)
+python tests/test_fetch_player_props.py # player-prop payload parser (no network)
 ```
 
 Each prints PASS/FAIL per check and asserts on failure (also runnable under

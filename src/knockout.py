@@ -138,33 +138,89 @@ def _form_sup(form, home, away) -> float:
     return engine.form_supremacy(form.get(home, 0.0), form.get(away, 0.0))
 
 
-def simulate_group(ds, group_id, ratings, rng, h2h=None, form=None):
-    """Return (ranked_team_ids, record_dict) for one group."""
-    h2h = h2h or {}
-    teams = list(ds.teams.loc[ds.teams.group_id == group_id, "team_id"])
-    rec = {t: {"pts": 0, "gf": 0, "ga": 0} for t in teams}
-    fixtures = ds.matches.loc[ds.matches.group_id == group_id]
-    for _, m in fixtures.iterrows():
-        h, a = m.home_id, m.away_id
-        if str(m.status) == "finished" and pd.notna(m.home_goals):
-            hg, ag = int(m.home_goals), int(m.away_goals)
-        else:
-            # Tournament on neutral soil: a group game only carries a home-crowd
-            # advantage when the home_id is a 2026 host nation (USA/MEX/CAN).
+# Ascending feeder order, computed once (every feeder resolves before its match).
+TREE_ORDER = sorted(TREE)
+
+
+def _prepare(ds) -> dict:
+    """Pre-compute everything the Monte-Carlo loop needs as plain Python.
+
+    The hot loop must never touch pandas: a single `DataFrame.loc` or `iterrows`
+    per game, multiplied by 72 games × tens of thousands of sims, dominated the
+    runtime (≈28 ms/sim). We resolve all of it ONCE here — ratings, per-group
+    fixture tuples (with the finished/expert/neutral flags baked in), group
+    rosters, and the h2h/form lookups — so `simulate_once` runs on dicts and
+    tuples only. Returns a context dict consumed by the `*_fast` helpers.
+    """
+    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
+    groups = list(ds.groups.group_id)
+    group_teams = {
+        g: list(ds.teams.loc[ds.teams.group_id == g, "team_id"]) for g in groups
+    }
+    group_fixtures: dict[str, list[tuple]] = {g: [] for g in groups}
+    for g in groups:
+        for _, m in ds.matches.loc[ds.matches.group_id == g].iterrows():
+            h, a = m.home_id, m.away_id
+            finished = str(m.status) == "finished" and pd.notna(m.home_goals)
+            hg = int(m.home_goals) if finished else 0
+            ag = int(m.away_goals) if finished else 0
+            # A group game carries a home-crowd edge only when home is a host.
             neutral = not ds.is_host(h)
-            hg, ag = engine.sample_score(
-                ratings[h], ratings[a], rng, neutral=neutral,
-                expert=ds.expert_for(m.match_id), h2h_sup=h2h.get((h, a), 0.0),
-                form_sup=_form_sup(form, h, a),
+            group_fixtures[g].append(
+                (h, a, finished, hg, ag, ds.expert_for(m.match_id), neutral)
             )
-        rec[h]["gf"] += hg; rec[h]["ga"] += ag
-        rec[a]["gf"] += ag; rec[a]["ga"] += hg
+    return {
+        "ratings": ratings,
+        "groups": groups,
+        "group_teams": group_teams,
+        "group_fixtures": group_fixtures,
+        "h2h": build_h2h(ds),
+        "form": build_form(ds),
+    }
+
+
+def simulate_group(ds, group_id, ratings, rng, h2h=None, form=None):
+    """Compatibility shim: build a context on the fly and delegate to the fast
+    path. Prefer `_simulate_group_fast` inside the Monte-Carlo loop."""
+    ctx = {
+        "ratings": ratings,
+        "group_teams": {group_id: list(
+            ds.teams.loc[ds.teams.group_id == group_id, "team_id"])},
+        "group_fixtures": {group_id: [
+            (m.home_id, m.away_id,
+             str(m.status) == "finished" and pd.notna(m.home_goals),
+             int(m.home_goals) if (str(m.status) == "finished"
+                                   and pd.notna(m.home_goals)) else 0,
+             int(m.away_goals) if (str(m.status) == "finished"
+                                   and pd.notna(m.home_goals)) else 0,
+             ds.expert_for(m.match_id), not ds.is_host(m.home_id))
+            for _, m in ds.matches.loc[ds.matches.group_id == group_id].iterrows()]},
+        "h2h": h2h or {},
+        "form": form or {},
+    }
+    return _simulate_group_fast(ctx, group_id, rng)
+
+
+def _simulate_group_fast(ctx, group_id, rng):
+    """Return (ranked_team_ids, record_dict) for one group — no pandas."""
+    teams = ctx["group_teams"][group_id]
+    ratings, h2h, form = ctx["ratings"], ctx["h2h"], ctx["form"]
+    rec = {t: {"pts": 0, "gf": 0, "ga": 0} for t in teams}
+    for h, a, finished, hg, ag, expert, neutral in ctx["group_fixtures"][group_id]:
+        if not finished:
+            hg, ag = engine.sample_score(
+                ratings[h], ratings[a], rng, neutral=neutral, expert=expert,
+                h2h_sup=h2h.get((h, a), 0.0), form_sup=_form_sup(form, h, a),
+            )
+        rh, ra = rec[h], rec[a]
+        rh["gf"] += hg; rh["ga"] += ag
+        ra["gf"] += ag; ra["ga"] += hg
         if hg > ag:
-            rec[h]["pts"] += 3
+            rh["pts"] += 3
         elif ag > hg:
-            rec[a]["pts"] += 3
+            ra["pts"] += 3
         else:
-            rec[h]["pts"] += 1; rec[a]["pts"] += 1
+            rh["pts"] += 1; ra["pts"] += 1
     ranked = sorted(
         teams,
         key=lambda t: (rec[t]["pts"], rec[t]["gf"] - rec[t]["ga"], rec[t]["gf"], rng.random()),
@@ -228,12 +284,11 @@ def _resolve_r32(pos, third_assign) -> dict[int, tuple]:
     return out
 
 
-def _group_phase(ds, ratings, rng, h2h=None, form=None):
+def _group_phase(ctx, rng):
     """Run all 12 groups; return (pos, third_assign, standings)."""
-    h2h = h2h or {}
     pos, group_thirds, standings = {}, [], {}
-    for g in ds.groups.group_id:
-        ranked, rec = simulate_group(ds, g, ratings, rng, h2h, form)
+    for g in ctx["groups"]:
+        ranked, rec = _simulate_group_fast(ctx, g, rng)
         pos[(g, 1)], pos[(g, 2)], pos[(g, 3)], pos[(g, 4)] = ranked
         standings[g] = [(t, rec[t]) for t in ranked]
         group_thirds.append((g, rec[ranked[2]]))
@@ -248,12 +303,13 @@ def _group_phase(ds, ratings, rng, h2h=None, form=None):
     return pos, third_assign, standings
 
 
-def simulate_once(ds, ratings, rng, counts, h2h=None, form=None):
-    h2h = h2h or {}
-    pos, third_assign, _ = _group_phase(ds, ratings, rng, h2h, form)
+def simulate_once(ctx, rng, counts):
+    """One full tournament; tally each team's round-reached counters in `counts`."""
+    ratings, h2h, form = ctx["ratings"], ctx["h2h"], ctx["form"]
+    pos, third_assign, _ = _group_phase(ctx, rng)
 
     # tally qualifiers
-    for g in ds.groups.group_id:
+    for g in ctx["groups"]:
         counts[pos[(g, 1)]]["knockout"] += 1
         counts[pos[(g, 2)]]["knockout"] += 1
     for g in set(third_assign.values()):
@@ -269,7 +325,7 @@ def simulate_once(ds, ratings, rng, counts, h2h=None, form=None):
         ) == 0 else a
         winners[m] = w
         counts[w][WIN_COUNTER[m]] += 1
-    for m in sorted(TREE):  # ascending: every feeder is resolved before its match
+    for m in TREE_ORDER:  # ascending: every feeder is resolved before its match
         fa, fb = TREE[m]
         h, a = winners[fa], winners[fb]
         w = h if engine.knockout_winner(
@@ -298,11 +354,10 @@ def _play_detail(rh, ra, rng, neutral=True, h2h_sup=0.0, form_sup=0.0):
 def simulate_detail(ds, seed: int | None = None) -> dict:
     """Simulate the tournament ONCE and return the full bracket with scores."""
     rng = random.Random(seed)
-    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
-    h2h = build_h2h(ds)
-    form = build_form(ds)
+    ctx = _prepare(ds)
+    ratings, h2h, form = ctx["ratings"], ctx["h2h"], ctx["form"]
 
-    pos, third_assign, _ = _group_phase(ds, ratings, rng, h2h, form)
+    pos, third_assign, _ = _group_phase(ctx, rng)
     r32 = _resolve_r32(pos, third_assign)
 
     winners, rounds = {}, []
@@ -347,15 +402,13 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
 def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
     """Run the Monte-Carlo and return a probability table sorted by title odds."""
     rng = random.Random(seed)
-    ratings = dict(zip(ds.teams.team_id, ds.teams.fifa_points))
-    h2h = build_h2h(ds)
-    form = build_form(ds)
+    ctx = _prepare(ds)
     counts = {
         t: {"knockout": 0, "r16": 0, "qf": 0, "sf": 0, "final": 0, "title": 0}
         for t in ds.teams.team_id
     }
     for _ in range(n):
-        simulate_once(ds, ratings, rng, counts, h2h, form)
+        simulate_once(ctx, rng, counts)
 
     rows = []
     for t, c in counts.items():

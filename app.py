@@ -82,7 +82,7 @@ st.sidebar.title("מונדיאל 2026 ⚽")
 view = st.sidebar.radio(
     "תצוגה",
     ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט",
-     "בראקט מסומלץ", "שאלות בונוס", "אמינות המודל"],
+     "בראקט מסומלץ", "שאלות בונוס", "מול בוקמייקרים", "אמינות המודל"],
 )
 st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
 
@@ -553,3 +553,90 @@ elif view == "אמינות המודל":
             )
         else:
             st.markdown("FIFA טהור מנצח — `ELO_WEIGHT` נשאר 0.")
+
+
+# --- view: vs bookmakers -----------------------------------------------------
+elif view == "מול בוקמייקרים":
+    st.header("מול בוקמייקרים — עוגן שוק")
+    st.caption(
+        "השוואת הסתברויות המודל מול הסתברויות השוק (יחסי הימור 1X2 לאחר הסרת "
+        "מרווח הסוכן). יחס הימור עשרוני → הסתברות = 1/יחס, מנורמל לסכום 1. "
+        "פער גדול = הזדמנות לבדיקה ידנית, לא בהכרח טעות."
+    )
+
+    anchors = ds.market_anchors() if hasattr(ds, "market_anchors") else []
+    if not anchors:
+        st.info(
+            "אין עדיין נתוני שוק. הוסף שורות ל-`data/market_odds.csv` "
+            "(match_id + dec_home/dec_draw/dec_away או p_home/p_draw/p_away) "
+            "כדי להפעיל את העוגן. הקובץ קיים עם כותרות בלבד — דורמנטי עד שתמלא אותו."
+        )
+    else:
+        n_flag = sum(1 for a in anchors if a["flag"])
+        st.markdown(f"**{len(anchors)}** משחקים עם יחסי שוק · "
+                    f"**{n_flag}** מסומנים לפער מהותי (≥10 נק' אחוז).")
+        rows = []
+        for a in anchors:
+            mo = a["model"]; mk = a["market"]
+            rows.append({
+                "משחק": f"{team(ds.match(a['match_id']).home_id)} - "
+                        f"{team(ds.match(a['match_id']).away_id)}",
+                "מודל 1": f"{mo['p_home']*100:.0f}%",
+                "שוק 1": f"{mk['p_home']*100:.0f}%",
+                "מודל X": f"{mo['p_draw']*100:.0f}%",
+                "שוק X": f"{mk['p_draw']*100:.0f}%",
+                "מודל 2": f"{mo['p_away']*100:.0f}%",
+                "שוק 2": f"{mk['p_away']*100:.0f}%",
+                "פער מרבי": f"{a['max_gap']*100:+.0f} נק'",
+                "מסכים על פייבוריט": "✓" if a["agree"] else "✗",
+                "דגל": "🚩" if a["flag"] else "",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("KL גבוה = המודל רחוק מהשוק. ✗ ב'מסכים על פייבוריט' = המודל "
+                   "והשוק חלוקים על מי הפייבוריט.")
+
+    # --- per-match player props (anytime scorer / assist) ---
+    st.divider()
+    st.subheader("שחקנים — לקלוע או לבשל (פר משחק)")
+    st.caption(
+        "הסתברות שחקן לקלוע/לבשל במשחק בודד, לפי נתח השערים/בישולים שלו "
+        "ותוחלת השערים של הנבחרת (פואסון: P(לפחות 1)=1-e^(-λ)). אם קיימים "
+        "יחסי הימור ב-`data/players_market.csv`, הם מוצגים לצד המודל."
+    )
+    labels = {
+        f"{m.group_id} | {team(m.home_id)} - {team(m.away_id)}": m.match_id
+        for _, m in ds.matches.iterrows()
+    }
+    chosen = st.selectbox("בחר משחק", list(labels.keys()), key="props_match")
+    props = ds.player_props(labels[chosen]) if hasattr(ds, "player_props") else []
+    if not props:
+        st.info("אין נתוני שחקנים לשתי הנבחרות במשחק זה (players.csv).")
+    else:
+        has_market = any("market" in p for p in props)
+        rows = []
+        for p in props:
+            mo = p["model"]
+            row = {
+                "שחקן": p.get("name_he") or p.get("name_en"),
+                "נבחרת": team(p["team_id"]),
+                "מודל קלע": f"{mo['p_score']*100:.0f}%",
+                "מודל בישל": f"{mo['p_assist']*100:.0f}%",
+                "מודל קלע/בישל": f"{mo['p_score_or_assist']*100:.0f}%",
+            }
+            if has_market:
+                mk = p.get("market", {})
+                def _pct(v):
+                    return f"{v*100:.0f}%" if v is not None else "—"
+                row["שוק קלע"] = _pct(mk.get("p_score"))
+                row["שוק קלע/בישל"] = _pct(mk.get("p_score_or_assist"))
+                cmp = p.get("compare", {})
+                flagged = any(c.get("flag") for c in cmp.values())
+                row["דגל"] = "🚩" if flagged else ""
+            rows.append(row)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if not has_market:
+            st.caption(
+                "להוספת יחסי שוק: מלא `data/players_market.csv` "
+                "(match_id, team_id, name_en, score_odds, assist_odds, "
+                "score_or_assist_odds). דורמנטי עד שתמלא אותו."
+            )
