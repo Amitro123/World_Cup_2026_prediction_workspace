@@ -28,6 +28,11 @@ PLAYER_TEAM = {
 # Tournament opener (known schedule): Mexico vs South Africa at Estadio Azteca.
 OPENER_TEAMS = ("MEX", "RSA")
 
+# Runner-up candidates within this many percentage points are treated as a tie
+# (the top title contenders sit inside Monte-Carlo noise at n~4000), so the
+# answer is reported as a pair rather than a falsely precise single team.
+RUNNERUP_NOISE = 1.5
+
 
 def _group_goal_sim(ds, n: int, rng) -> tuple[dict, dict, dict]:
     """Monte-Carlo the 72 group games -> expected goals for/against per team.
@@ -95,7 +100,17 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
     runnerup = (df["final_%"] - df["title_%"]).sort_values(ascending=False)
     champion = df["title_%"].idxmax()
     # most likely runner-up that is NOT your champion pick
-    runnerup_pick = next(t for t in runnerup.index if t != champion)
+    cands = [t for t in runnerup.index if t != champion]
+    runnerup_pick = cands[0]
+    # The top title contenders are routinely a statistical tie (gap < MC noise),
+    # so who is "champion" vs "runner-up" flips by seed. When the second-best
+    # runner-up is within RUNNERUP_NOISE points, report a pair instead of a
+    # falsely precise single team.
+    second = cands[1] if len(cands) > 1 else None
+    runnerup_tie = bool(second is not None
+                        and runnerup[runnerup_pick] - runnerup[second] < RUNNERUP_NOISE)
+    runnerup_answer = (f"{name(runnerup_pick)} / {name(second)}"
+                       if runnerup_tie else name(runnerup_pick))
     top_finalists = [
         {"team": name(t), "final_%": round(df.loc[t, "final_%"], 1),
          "title_%": round(df.loc[t, "title_%"], 1),
@@ -196,8 +211,11 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
 
     return {
         "runner_up": {
-            "answer": name(runnerup_pick),
-            "note": f"בהנחה ש{name(champion)} אלופה; הסגנית הסבירה הבאה.",
+            "answer": runnerup_answer,
+            "note": (f"בהנחה ש{name(champion)} אלופה; הסגנית הסבירה הבאה. "
+                     + ("הפסגה צפופה בתוך רעש הסימולציה — שתי המועמדות כמעט שוות."
+                        if runnerup_tie else "")).strip(),
+            "tie": runnerup_tie,
             "table": top_finalists,
         },
         "top_assists": top_assists,
