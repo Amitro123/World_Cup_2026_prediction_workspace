@@ -90,10 +90,13 @@ def test_agent_path():
     print("[3] the AGENT path (match_briefing) reflects H2H")
     ds = DataStore.load(DATA)
 
-    # find a real fixture whose two teams have recorded history
+    # find a real fixture whose H2H actually moves the model (a balanced record,
+    # e.g. a single draw, legitimately nets to zero supremacy and leaves the
+    # briefing unchanged — so require a non-zero net effect, not merely a meeting)
     target = None
     for m in ds.matches.itertuples():
-        if ds.h2h_meetings(m.home_id, m.away_id):
+        if (ds.h2h_meetings(m.home_id, m.away_id)
+                and abs(ds.h2h_supremacy_for(m.home_id, m.away_id)) > 1e-9):
             target = m
             break
 

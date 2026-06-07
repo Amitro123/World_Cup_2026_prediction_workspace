@@ -134,12 +134,15 @@ def test_resolve_team_id_caches_to_disk():
 
 def test_provider_from_env_none_without_key(monkeypatch=None):
     saved = os.environ.pop("API_FOOTBALL_KEY", None)
+    # Stub _load_dotenv so a real .env at the repo root (a developer's actual key)
+    # cannot leak back in and make this "no key configured" assertion flaky.
+    orig_loader = providers._load_dotenv
+    providers._load_dotenv = lambda *a, **k: None
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            # ensure no .env at repo root leaks a key into this assertion
-            if not os.environ.get("API_FOOTBALL_KEY"):
-                assert providers.provider_from_env(tmp) is None
+            assert providers.provider_from_env(tmp) is None
     finally:
+        providers._load_dotenv = orig_loader
         if saved is not None:
             os.environ["API_FOOTBALL_KEY"] = saved
 

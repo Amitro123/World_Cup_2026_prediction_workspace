@@ -71,6 +71,24 @@ def parse_event(event: dict, prefer_book: str | None = None) -> dict | None:
     return None
 
 
+# The Odds API spells a few nations differently from teams.csv name_en; _norm
+# (accent-strip + drop "and"/"&") converges most, these two need an explicit map.
+_NAME_ALIASES = {
+    "czech republic": "czechia",
+    "usa": "united states",
+}
+
+
+def _norm(name: str) -> str:
+    """Normalise a team name for matching: drop accents, punctuation and 'and'."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
+    s = "".join(c if c.isalnum() or c.isspace() else " " for c in s.lower())
+    toks = [t for t in s.split() if t != "and"]
+    s = " ".join(toks)
+    return _NAME_ALIASES.get(s, s)
+
+
 def rows_from_payload(payload, match_index: dict, prefer_book: str | None = None,
                       captured_at: str = "") -> list[dict]:
     """Parse a full The-Odds-API response into market_odds.csv rows.
@@ -87,8 +105,8 @@ def rows_from_payload(payload, match_index: dict, prefer_book: str | None = None
         parsed = parse_event(event, prefer_book=prefer_book)
         if parsed is None:
             continue
-        h = str(parsed["home_team"]).lower()
-        a = str(parsed["away_team"]).lower()
+        h = _norm(parsed["home_team"])
+        a = _norm(parsed["away_team"])
         if (h, a) in match_index:
             mid = match_index[(h, a)]
             dh, dd, da = parsed["dec_home"], parsed["dec_draw"], parsed["dec_away"]
@@ -110,7 +128,7 @@ def build_match_index(teams_csv: str, matches_csv: str) -> dict:
     code_to_name = {}
     with open(teams_csv, encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            code_to_name[r["team_id"]] = str(r.get("name_en", "")).lower()
+            code_to_name[r["team_id"]] = _norm(r.get("name_en", ""))
     index = {}
     with open(matches_csv, encoding="utf-8") as f:
         for r in csv.DictReader(f):
