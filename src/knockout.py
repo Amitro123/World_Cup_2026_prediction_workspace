@@ -17,8 +17,10 @@ How it works
    Annex-C candidate-group list, and the 8 qualifying thirds are assigned to
    those slots by constrained bipartite matching (so a third always lands in a
    slot its group is eligible for — no same-group rematch in R32).
-4. Knockout games are played at a neutral venue; draws resolve via the
-   strength-weighted tiebreak in engine.knockout_winner (ET / penalties proxy).
+4. Knockout games are played at a neutral venue. A tie after 90' goes to 30' of
+   (lower-scoring) extra time where the stronger side keeps its full edge, and
+   only a still-level ET reaches a near-coin-flip penalty shootout — see
+   engine.resolve_knockout.
 
 The R16/QF/SF tree is wired by explicit match dependencies (TREE), so the
 left/right halves of the draw match the real bracket rather than a naive
@@ -337,18 +339,19 @@ def simulate_once(ctx, rng, counts):
 
 
 def _play_detail(rh, ra, rng, neutral=True, h2h_sup=0.0, form_sup=0.0):
-    """Play one knockout tie, return (winner_idx, home_goals, away_goals, note)."""
-    hg, ag = engine.sample_score(
+    """Play one knockout tie, return (winner_idx, home_goals, away_goals, note).
+
+    Goals are the aggregate after extra time; the note marks how it was decided
+    (ET = "(הארכה)", shootout = "(פנדלים)")."""
+    wi, info = engine.resolve_knockout(
         rh, ra, rng, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
     )
-    if hg != ag:
-        return (0 if hg > ag else 1, hg, ag, "")
-    probs = engine.ProbabilityModel().pre_match(
-        rh, ra, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
-    )
-    ph, pa = probs["p_home"], probs["p_away"]
-    wi = 0 if rng.random() < ph / (ph + pa) else 1
-    return (wi, hg, ag, " (פנדלים)")
+    hg, ag = info["reg"]
+    if info["et"] is None:
+        return (wi, hg, ag, "")
+    eh, ea = info["et"]
+    note = " (פנדלים)" if info["pens"] else " (הארכה)"
+    return (wi, hg + eh, ag + ea, note)
 
 
 def simulate_detail(ds, seed: int | None = None) -> dict:

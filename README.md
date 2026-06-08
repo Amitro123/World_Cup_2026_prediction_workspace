@@ -537,11 +537,17 @@ Both paths report `source` in their JSON output so you know which was used.
    slots use the official Annex-C candidate lists, assigned by constrained
    bipartite matching (no same-group rematch). The R16/QF/SF tree is wired by
    explicit match dependencies.
-4. **Knockout games** — neutral venue; draws resolve (ET/penalties) by relative
-   strength, but the favourite's advance probability is **capped at
-   `SHOOTOUT_CAP = 0.58`** — a shootout is close to a coin flip regardless of the
-   skill gap, so even a huge favourite is at most ~58% to survive, not 80%+.
-   H2H and form supremacy are precomputed once per run and applied throughout.
+4. **Knockout games** — neutral venue, resolved in two real phases
+   (`engine.resolve_knockout`): a tie after 90' plays **30' of extra time** with
+   each side's goal rate scaled by **`ET_LAMBDA_SCALE = 0.33`** (ET is ~⅓ of a
+   match and lower-scoring), where the **stronger side keeps its full edge**;
+   only a still-level ET reaches a **penalty shootout**, which is near a coin
+   flip — the favourite is **capped at `SHOOTOUT_CAP = 0.53`** (the empirical
+   long-run shootout win rate, ~52–55%). So a clear favourite that's level at 90'
+   usually wins in ET (~80%+) but barely above 50% if it actually goes to pens,
+   matching reality — instead of the old single capped coin flip that under-rated
+   favourites in ET. About 20–35% of evenly matched ties go beyond 90'. H2H and
+   form supremacy are precomputed once per run and applied throughout.
 
 ```python
 from src.models import DataStore

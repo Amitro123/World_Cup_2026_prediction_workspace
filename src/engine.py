@@ -104,13 +104,18 @@ def blend_strength(
     return fifa_mean + fifa_std * z
 
 
-# Knockout draws go to extra time + penalties. The stronger team keeps a real but
-# LIMITED edge there: shootouts in particular are close to a coin flip regardless
-# of the skill gap. We therefore resolve a knockout draw proportionally to win
-# strength but cap the favourite's advance probability at SHOOTOUT_CAP (so even a
-# huge favourite is at most ~53% to survive ET/pens, not 80%+). 0.53 matches the
-# empirical long-run favourite win rate in penalty shootouts (~52-55%); 0.58 was
-# a slightly generous heuristic.
+# Knockout draws go to 30' of extra time and then, if still level, penalties.
+# We model these as two distinct regimes (see `resolve_knockout`):
+#   1. EXTRA TIME — a real mini-match where the stronger side keeps its full
+#      edge. ET is 30 min ≈ 1/3 of regulation, and historically lower-scoring
+#      per minute (cagey, fatigue), so we scale each side's expected goals by
+#      ET_LAMBDA_SCALE. Matches that reach ET average ~0.8 total goals in it vs
+#      ~2.5 in regulation, so ~0.33 is empirically reasonable.
+#   2. PENALTY SHOOTOUT — near a coin flip regardless of the skill gap. Only the
+#      still-level-after-ET ties reach it; we split proportionally to win
+#      strength but cap the favourite at SHOOTOUT_CAP. 0.53 matches the empirical
+#      long-run favourite win rate in shootouts (~52-55%); 0.58 was generous.
+ET_LAMBDA_SCALE = 0.33
 SHOOTOUT_CAP = 0.53
 
 # --- Head-to-head (past meetings) signal ------------------------------------
@@ -540,24 +545,57 @@ def sample_score(
     return sample_poisson(lam_h, rng), sample_poisson(lam_a, rng)
 
 
-def knockout_winner(
+def resolve_knockout(
     rating_home: float, rating_away: float, rng, neutral: bool = True,
     h2h_sup: float = 0.0, form_sup: float = 0.0,
-) -> int:
-    """Return 0 if home advances, 1 if away. Draws resolve (ET/penalties) by
-    splitting proportionally to each side's win strength."""
-    hg, ag = sample_score(
-        rating_home, rating_away, rng, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
+) -> tuple[int, dict]:
+    """Play a knockout tie to a single winner via regulation -> ET -> penalties.
+
+    Returns ``(winner_idx, info)`` where ``winner_idx`` is 0 (home) or 1 (away)
+    and ``info`` describes how it was decided::
+
+        {"reg": (hg, ag),            # 90' score
+         "et":  (eh, ea) | None,     # extra-time-only goals, None if decided in 90'
+         "pens": bool}               # True if it went to a shootout
+
+    Regulation and ET share the same expected-goal rates (ET scaled by
+    ET_LAMBDA_SCALE); only a tie after both reaches the capped shootout.
+    """
+    lam_h, lam_a = expected_goals(
+        rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
     )
-    if hg > ag:
-        return 0
-    if ag > hg:
-        return 1
+    hg, ag = sample_poisson(lam_h, rng), sample_poisson(lam_a, rng)
+    if hg != ag:
+        return (0 if hg > ag else 1), {"reg": (hg, ag), "et": None, "pens": False}
+
+    # Level after 90' -> 30' of extra time, lower-scoring (ET_LAMBDA_SCALE).
+    eh = sample_poisson(lam_h * ET_LAMBDA_SCALE, rng)
+    ea = sample_poisson(lam_a * ET_LAMBDA_SCALE, rng)
+    if eh != ea:
+        return (0 if eh > ea else 1), {"reg": (hg, ag), "et": (eh, ea), "pens": False}
+
+    # Still level -> penalty shootout: near a coin flip, capped by SHOOTOUT_CAP.
     probs = ProbabilityModel().pre_match(
         rating_home, rating_away, neutral=neutral, h2h_sup=h2h_sup, form_sup=form_sup
     )
     ph, pa = probs["p_home"], probs["p_away"]
     frac = ph / (ph + pa) if (ph + pa) > 0 else 0.5
-    # Cap the favourite's ET/penalties edge — a shootout is near a coin flip.
     frac = max(1.0 - SHOOTOUT_CAP, min(SHOOTOUT_CAP, frac))
-    return 0 if rng.random() < frac else 1
+    wi = 0 if rng.random() < frac else 1
+    return wi, {"reg": (hg, ag), "et": (eh, ea), "pens": True}
+
+
+def knockout_winner(
+    rating_home: float, rating_away: float, rng, neutral: bool = True,
+    h2h_sup: float = 0.0, form_sup: float = 0.0,
+) -> int:
+    """Return 0 if home advances, 1 if away (regulation -> ET -> penalties).
+
+    Thin wrapper over `resolve_knockout` for the Monte-Carlo hot loop, which only
+    needs the winner index.
+    """
+    wi, _ = resolve_knockout(
+        rating_home, rating_away, rng, neutral=neutral,
+        h2h_sup=h2h_sup, form_sup=form_sup,
+    )
+    return wi
