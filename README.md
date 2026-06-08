@@ -136,6 +136,11 @@ views are:
   thousands of times and shows each team's qualify / R16 / QF / SF / final /
   title odds.
 - **בראקט מסומלץ (Simulated Bracket)** — one full random run of the bracket.
+- **קושי ההגרלה (Draw Difficulty)** — group-by-group title equity plus the
+  deterministic "chalk" bracket geometry: which half/quarter each group winner
+  lands in, and which favorites are on a collision course (and at what round)
+  before the final. Explains *why* the title odds look the way they do — e.g.
+  two co-favorites in the same half suppress each other's headline number.
 - **שאלות בונוס (Bonus Questions)** — model-derived answers to tournament side
   bets.
 
@@ -569,10 +574,26 @@ df = knockout.run(ds, n=2000, seed=42)
 
 # One full random bracket (scores + winners) instead of probabilities:
 bracket = knockout.simulate_detail(ds, seed=42)
+
+# Draw difficulty: group title equity + deterministic chalk-bracket geometry.
+draw = knockout.draw_difficulty(ds, n=8000, seed=2026)
+# draw["groups"]     -> per group: strongest team, its title%, the group's total
+#                       title equity, avg qualify%, and the half/quarter the
+#                       group WINNER lands in (sorted by total equity).
+# draw["collisions"] -> pairs among the 8 strongest teams that meet BEFORE the
+#                       final in the chalk bracket, with the round — i.e. which
+#                       favorites suppress each other's headline title odds.
 ```
 
+The bracket geometry is derived straight from the `R32`/`TREE` constants (no
+simulation): `_WINNER_R32` maps each group letter to the R32 match its winner
+enters, `_quarter_half` returns that slot's quarter (1–4) and half, and
+`_meet_stage` returns the round at which two group winners first collide (the
+lowest common ancestor of their two paths up the tree).
+
 > `knockout.py` is a library module (no standalone CLI). Call `knockout.run` /
-> `knockout.simulate_detail` from Python, or use the dashboard's simulation views.
+> `knockout.simulate_detail` / `knockout.draw_difficulty` from Python, or use the
+> dashboard's simulation views.
 
 ---
 

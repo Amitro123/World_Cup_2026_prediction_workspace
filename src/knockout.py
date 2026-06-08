@@ -429,3 +429,106 @@ def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows).sort_values("title_%", ascending=False).reset_index(drop=True)
+
+
+# --- Bracket-region helpers (deterministic "chalk" structure) ----------------
+# These derive the draw geometry straight from R32/TREE — no simulation needed.
+# "Chalk" = the bracket you get if every group winner advances; it tells you
+# which favorites are bunched into the same half/quarter and therefore must
+# knock each other out before the final.
+_PARENT = {child: parent for parent, feeders in TREE.items() for child in feeders}
+
+# group letter -> R32 match its WINNER enters (from the ("W", group) slots).
+_WINNER_R32 = {
+    slot[1]: m for m, (a, b) in R32.items() for slot in (a, b) if slot[0] == "W"
+}
+
+
+def _path_to_final(m: int) -> list[int]:
+    """Match numbers from R32 match `m` up the tree to the final (M104)."""
+    path, cur = [m], m
+    while cur in _PARENT:
+        cur = _PARENT[cur]
+        path.append(cur)
+    return path
+
+
+def _stage_of(m: int) -> str:
+    """Hebrew round label for the round contested in match number `m`."""
+    if m <= 88:
+        return "1/16"
+    if m <= 96:
+        return "1/8"
+    if m <= 100:
+        return "רבע גמר"
+    if m <= 102:
+        return "חצי גמר"
+    return "גמר"
+
+
+def _quarter_half(m: int) -> tuple[int, str]:
+    """(quarter 1-4, half) for the team entering at R32 match `m`."""
+    qf = next(x for x in _path_to_final(m) if 97 <= x <= 100)
+    half = "עליון" if qf in (97, 98) else "תחתון"
+    return qf - 96, half
+
+
+def _meet_stage(m1: int, m2: int) -> str:
+    """Round at which the winners of R32 matches m1 and m2 first collide.
+
+    The lowest common ancestor of the two paths in the bracket tree.
+    """
+    p2 = set(_path_to_final(m2))
+    lca = next(x for x in _path_to_final(m1) if x in p2)
+    return _stage_of(lca)
+
+
+_STAGE_ORDER = {"1/16": 0, "1/8": 1, "רבע גמר": 2, "חצי גמר": 3, "גמר": 4}
+
+
+def draw_difficulty(ds, n: int = 8000, seed: int | None = None) -> dict:
+    """Group-by-group draw difficulty + deterministic chalk-bracket collisions.
+
+    Returns {"groups": [...], "collisions": [...], "n": n}:
+      groups     – per group: its strongest team, that team's title%, the group's
+                   total title equity, average qualify%, and the half/quarter the
+                   group WINNER lands in. Sorted by total title equity (the
+                   "group of death" first).
+      collisions – pairs among the eight strongest groups' winners that would meet
+                   BEFORE the final in the chalk bracket, with the round — i.e.
+                   which favorites are on a collision course and suppress each
+                   other's headline title odds.
+    """
+    df = run(ds, n=n, seed=seed)  # already sorted by title_% descending
+    groups = []
+    for g, sub in df.groupby("group"):
+        top = sub.iloc[0]  # strongest team in the group (global title sort)
+        quarter, half = _quarter_half(_WINNER_R32[g])
+        groups.append(
+            {
+                "group": g,
+                "top_team": top["name_he"],
+                "top_title": round(float(top["title_%"]), 1),
+                "group_title": round(float(sub["title_%"].sum()), 1),
+                "avg_qualify": round(float(sub["qualify_%"].mean()), 1),
+                "half": half,
+                "quarter": quarter,
+            }
+        )
+    groups.sort(key=lambda r: r["group_title"], reverse=True)
+
+    # Collision contenders are the eight strongest *teams* (by their own title
+    # odds), not the eight strongest groups — otherwise a heavyweight in a weak
+    # group (e.g. a lone favorite) is dropped and its early collisions hidden.
+    top8 = sorted(groups, key=lambda r: r["top_title"], reverse=True)[:8]
+    collisions = []
+    for i in range(len(top8)):
+        for j in range(i + 1, len(top8)):
+            a, b = top8[i], top8[j]
+            stage = _meet_stage(_WINNER_R32[a["group"]], _WINNER_R32[b["group"]])
+            if stage != "גמר":  # meeting in the final isn't a "collision" worth flagging
+                collisions.append(
+                    {"team_a": a["top_team"], "team_b": b["top_team"], "stage": stage}
+                )
+    collisions.sort(key=lambda c: _STAGE_ORDER.get(c["stage"], 9))
+    return {"groups": groups, "collisions": collisions, "n": n}

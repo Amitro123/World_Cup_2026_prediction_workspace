@@ -95,6 +95,70 @@ def test_play_detail_notes_reflect_stage():
     assert saw_reg and saw_et and saw_pen
 
 
+# --- bracket-geometry helpers (deterministic, no simulation) -----------------
+def test_winner_r32_covers_all_12_groups():
+    assert set(knockout._WINNER_R32) == set("ABCDEFGHIJKL")
+
+
+def test_path_to_final_ends_at_root():
+    for m in range(73, 89):
+        path = knockout._path_to_final(m)
+        assert path[0] == m
+        assert path[-1] == 104          # every R32 path climbs to the final
+        assert len(set(path)) == len(path)  # no repeats
+
+
+def test_quarter_half_partitions_the_draw():
+    """Each group winner sits in exactly one of 4 quarters / 2 halves, and the
+    quarters nest correctly inside the halves."""
+    seen = {}
+    for g, m in knockout._WINNER_R32.items():
+        q, half = knockout._quarter_half(m)
+        assert q in (1, 2, 3, 4)
+        assert half in ("עליון", "תחתון")
+        assert (half == "עליון") == (q in (1, 2))  # Q1/Q2 top, Q3/Q4 bottom
+        seen[g] = (q, half)
+    # all four quarters are actually used by some group winner
+    assert {q for q, _ in seen.values()} == {1, 2, 3, 4}
+
+
+def test_meet_stage_is_symmetric_and_known():
+    a, b = knockout._WINNER_R32["I"], knockout._WINNER_R32["H"]
+    assert knockout._meet_stage(a, b) == knockout._meet_stage(b, a)
+    # France(I) and Spain(H) are both top-half group winners -> meet in the SF
+    assert knockout._meet_stage(a, b) == "חצי גמר"
+    # France(I) and Germany(E) feed the same R16 match -> meet in the 1/8
+    assert knockout._meet_stage(a, knockout._WINNER_R32["E"]) == "1/8"
+
+
+def test_meet_stage_same_match_never_final():
+    """Any two distinct group winners must collide at or before the final."""
+    valid = {"1/16", "1/8", "רבע גמר", "חצי גמר", "גמר"}
+    ms = list(knockout._WINNER_R32.values())
+    for i in range(len(ms)):
+        for j in range(i + 1, len(ms)):
+            assert knockout._meet_stage(ms[i], ms[j]) in valid
+
+
+def test_draw_difficulty_shape():
+    from src.models import DataStore
+
+    ds = DataStore.load(os.path.join(os.path.dirname(__file__), "..", "data"))
+    d = knockout.draw_difficulty(ds, n=400, seed=1)
+    assert len(d["groups"]) == 12                 # one row per group
+    assert d["groups"] == sorted(                 # sorted by group title equity
+        d["groups"], key=lambda r: r["group_title"], reverse=True
+    )
+    for row in d["groups"]:
+        assert 0.0 <= row["avg_qualify"] <= 100.0
+        assert row["quarter"] in (1, 2, 3, 4)
+    # collisions only flag pre-final meetings among the strongest teams
+    assert all(c["stage"] != "גמר" for c in d["collisions"])
+    names = {r["top_team"] for r in d["groups"]}
+    for c in d["collisions"]:
+        assert c["team_a"] in names and c["team_b"] in names
+
+
 if __name__ == "__main__":
     import traceback
 
