@@ -43,7 +43,10 @@ _PROB_KEY = {"H": "p_home", "D": "p_draw", "A": "p_away"}
 DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "backtest_2022.csv")
 
 # Engine constants this module can temporarily override for a sweep.
-_TUNABLE = ("K", "BASE_TOTAL", "HOME_SUP", "DC_RHO", "FIFA_MEAN")
+# EXPERT_W is tunable too, but only bites on rows that carry expert columns
+# (exp_home/exp_away); our historical holdouts don't, so fitting it needs new
+# data — see `fit_report`'s note.
+_TUNABLE = ("K", "BASE_TOTAL", "HOME_SUP", "DC_RHO", "FIFA_MEAN", "EXPERT_W")
 
 
 @dataclass
@@ -408,6 +411,147 @@ def sweep(
     return rows
 
 
+# --- parameter fitting -------------------------------------------------------
+
+# The default grid `fit_report` searches. Centred on the shipped constants so
+# the fit can confirm or move them. K = FIFA points per goal of supremacy;
+# BASE_TOTAL = baseline expected goals per match.
+DEFAULT_GRID: dict[str, list[float]] = {
+    "K": [float(k) for k in range(150, 401, 10)],          # 150..400 step 10
+    "BASE_TOTAL": [round(2.0 + 0.1 * i, 1) for i in range(15)],  # 2.0..3.4
+}
+
+_METRICS = ("log_loss", "brier")
+
+
+def _metric_sum(df: pd.DataFrame, overrides: dict, metric: str) -> tuple[float, int]:
+    """Total (not mean) of `metric` over df under engine overrides, plus n.
+
+    Returned as a sum so several frames can be pooled before averaging — needed
+    for leave-one-tournament-out CV where each fold contributes its own matches.
+    """
+    m = evaluate(df, overrides=overrides)
+    return getattr(m, metric) * m.n, m.n
+
+
+def _product(grid: dict[str, list[float]]):
+    """Yield every combination of the grid as an {param: value} dict."""
+    import itertools
+    names = list(grid)
+    for combo in itertools.product(*(grid[n] for n in names)):
+        yield dict(zip(names, combo))
+
+
+def grid_fit(
+    df: pd.DataFrame,
+    grid: dict[str, list[float]] | None = None,
+    metric: str = "log_loss",
+) -> dict:
+    """Exhaustive grid search for the constants that minimise `metric` on df.
+
+    Returns the best combination, its score, and the score at the *current*
+    shipped constants so the improvement (if any) is explicit.
+    """
+    if metric not in _METRICS:
+        raise ValueError(f"metric must be one of {_METRICS}")
+    grid = grid or DEFAULT_GRID
+    best: dict | None = None
+    for combo in _product(grid):
+        s, n = _metric_sum(df, combo, metric)
+        score = s / n if n else float("inf")
+        if best is None or score < best["score"]:
+            best = {"params": combo, "score": score}
+    # score at the shipped defaults (empty override = use current engine values)
+    base_s, base_n = _metric_sum(df, {}, metric)
+    return {
+        "metric": metric,
+        "best_params": best["params"],
+        "best_score": round(best["score"], 4),
+        "default_score": round(base_s / base_n, 4),
+        "improvement": round(base_s / base_n - best["score"], 4),
+        "n": base_n,
+    }
+
+
+def cv_fit(
+    frames: dict[str, pd.DataFrame],
+    grid: dict[str, list[float]] | None = None,
+    metric: str = "log_loss",
+) -> dict:
+    """Leave-one-tournament-out cross-validated fit.
+
+    For each tournament: fit the grid on the *other* tournaments, then score the
+    fitted params — and, separately, the shipped defaults — on the held-out
+    tournament the fit never saw. Pooling the held-out scores gives an honest
+    out-of-sample comparison (fitted vs default) that cannot overfit, directly
+    answering the CR's "don't pick K by intuition" while avoiding the in-sample
+    trap of fitting and reporting on the same matches.
+    """
+    grid = grid or DEFAULT_GRID
+    labels = list(frames)
+    folds: list[dict] = []
+    fit_sum = def_sum = 0.0
+    total_n = 0
+    for held in labels:
+        train = pd.concat([frames[l] for l in labels if l != held], ignore_index=True)
+        test = frames[held]
+        fitted = grid_fit(train, grid, metric)["best_params"]
+        f_s, f_n = _metric_sum(test, fitted, metric)
+        d_s, d_n = _metric_sum(test, {}, metric)
+        folds.append({
+            "held_out": held,
+            "n": f_n,
+            "fitted_params": fitted,
+            "fitted_score": round(f_s / f_n, 4),
+            "default_score": round(d_s / d_n, 4),
+            "delta": round(d_s / d_n - f_s / f_n, 4),  # +ve = fit helped
+        })
+        fit_sum += f_s; def_sum += d_s; total_n += f_n
+    return {
+        "metric": metric,
+        "folds": folds,
+        "pooled_fitted": round(fit_sum / total_n, 4),
+        "pooled_default": round(def_sum / total_n, 4),
+        "pooled_improvement": round((def_sum - fit_sum) / total_n, 4),
+        "n": total_n,
+    }
+
+
+def fit_report(
+    sources: dict[str, str] | None = None,
+    grid: dict[str, list[float]] | None = None,
+    metric: str = "log_loss",
+) -> dict:
+    """Full fitting report: cross-validated verdict + a final all-data fit.
+
+    1. `cv_fit` measures, out of sample, whether *re-fitting* K/BASE_TOTAL beats
+       the shipped defaults — the honest test of "should we tune these?".
+    2. `grid_fit` on all tournaments pooled gives the single best constants to
+       actually ship, if (1) says fitting helps.
+
+    EXPERT_W is intentionally absent: none of the historical holdouts carry
+    expert scorelines, so a sweep of EXPERT_W would be a silent no-op. Fitting it
+    honestly requires expert columns on the backtest data, which we do not have.
+    """
+    sources = sources or _discover_sources()
+    frames = {l: pd.read_csv(p) for l, p in sources.items() if os.path.exists(p)}
+    if not frames:
+        return {"error": "no holdout CSVs found", "looked_for": sources}
+    grid = grid or DEFAULT_GRID
+    cv = cv_fit(frames, grid, metric)
+    pooled_df = pd.concat(list(frames.values()), ignore_index=True)
+    final = grid_fit(pooled_df, grid, metric)
+    return {
+        "grid": {k: [v[0], v[-1], len(v)] for k, v in grid.items()},  # lo, hi, count
+        "cross_validation": cv,
+        "final_fit_all_data": final,
+        "current": {"K": engine.K, "BASE_TOTAL": engine.BASE_TOTAL,
+                    "EXPERT_W": engine.EXPERT_W},
+        "expert_w_note": ("EXPERT_W not fitted: no holdout tournament carries "
+                          "exp_home/exp_away, so it cannot be measured here."),
+    }
+
+
 # --- multi-tournament holdout ------------------------------------------------
 
 # The named configurations the holdout compares. Each is a recipe for
@@ -652,6 +796,39 @@ def _print_holdout(rep: dict) -> None:
     print()
 
 
+def _print_fit(rep: dict) -> None:
+    if "error" in rep:
+        print(f"\n[fit] {rep['error']}: {rep.get('looked_for')}\n")
+        return
+    g = rep["grid"]
+    print("\n=== Parameter fit (minimise log-loss) ===")
+    print("Grid: " + ", ".join(f"{k} {v[0]:g}..{v[1]:g} ({v[2]})" for k, v in g.items()))
+
+    cv = rep["cross_validation"]
+    print(f"\nLeave-one-tournament-out CV ({cv['metric']}, {cv['n']} matches):")
+    print(f"  {'held-out':>10} {'n':>4} {'fitted':>8} {'default':>8} {'delta':>7}  fitted params")
+    for f in cv["folds"]:
+        pstr = ", ".join(f"{k}={v:g}" for k, v in f["fitted_params"].items())
+        print(f"  {f['held_out']:>10} {f['n']:>4} {f['fitted_score']:>8.4f} "
+              f"{f['default_score']:>8.4f} {f['delta']:>+7.4f}  {pstr}")
+    print(f"  {'POOLED':>10} {cv['n']:>4} {cv['pooled_fitted']:>8.4f} "
+          f"{cv['pooled_default']:>8.4f} {cv['pooled_improvement']:>+7.4f}")
+    verdict = ("re-fitting helps out of sample — adopt the all-data fit"
+               if cv["pooled_improvement"] > 0
+               else "shipped constants already match/beat any re-fit — keep them")
+    print(f"  => {verdict}")
+
+    fin = rep["final_fit_all_data"]
+    cur = rep["current"]
+    print(f"\nBest fit on ALL data ({fin['metric']}): "
+          + ", ".join(f"{k}={v:g}" for k, v in fin["best_params"].items()))
+    print(f"  in-sample {fin['metric']}: {fin['best_score']:.4f} "
+          f"vs default {fin['default_score']:.4f} ({fin['improvement']:+.4f})")
+    print(f"  current shipped: K={cur['K']:g}, BASE_TOTAL={cur['BASE_TOTAL']:g}, "
+          f"EXPERT_W={cur['EXPERT_W']:g}")
+    print(f"  {rep['expert_w_note']}\n")
+
+
 def main(argv=None) -> None:
     import argparse
     import json
@@ -661,8 +838,19 @@ def main(argv=None) -> None:
                     "(default: data/backtest_2022.csv)")
     ap.add_argument("--holdout", action="store_true",
                     help="multi-tournament holdout across all data/backtest_*.csv")
+    ap.add_argument("--fit", action="store_true",
+                    help="cross-validated fit of K/BASE_TOTAL across all "
+                    "data/backtest_*.csv (minimise log-loss)")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a report")
     args = ap.parse_args(argv)
+
+    if args.fit:
+        rep = fit_report()
+        if args.json:
+            print(json.dumps(rep, ensure_ascii=False, indent=2))
+        else:
+            _print_fit(rep)
+        return
 
     if args.holdout:
         rep = holdout()

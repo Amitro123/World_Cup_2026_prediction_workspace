@@ -79,6 +79,58 @@ def test_calibration_bins_well_formed():
         assert 0.0 <= b["observed"] <= 1.0
 
 
+def test_per_match_brier_matches_evaluate():
+    df = _toy_df()
+    mb, ub = backtest.per_match_brier(df)
+    assert len(mb) == len(ub) == len(df)
+    # mean of per-match model Brier == evaluate().brier
+    assert abs(sum(mb) / len(mb) - backtest.evaluate(df).brier) < 1e-9
+    # uniform per-match Brier is constant 3*(1/3 - y)^2 summed = 2/3
+    assert all(abs(u - 2 / 3) < 1e-9 for u in ub)
+
+
+def test_skill_ci_brackets_point_and_is_ordered():
+    ci = backtest.skill_ci(_toy_df(), n_boot=200, seed=1)
+    assert ci["n"] == 3
+    assert ci["ci95_lo"] <= ci["skill"] <= ci["ci95_hi"]
+
+
+def test_skill_ci_deterministic_with_seed():
+    a = backtest.skill_ci(_toy_df(), n_boot=200, seed=7)
+    b = backtest.skill_ci(_toy_df(), n_boot=200, seed=7)
+    assert a == b
+
+
+def test_grid_fit_finds_a_minimum_and_restores():
+    before_k, before_bt = engine.K, engine.BASE_TOTAL
+    grid = {"K": [180.0, 240.0, 300.0], "BASE_TOTAL": [2.4, 2.6, 2.8]}
+    rep = backtest.grid_fit(_toy_df(), grid)
+    assert rep["best_params"]["K"] in grid["K"]
+    assert rep["best_params"]["BASE_TOTAL"] in grid["BASE_TOTAL"]
+    # the best score is no worse than the default score by construction
+    assert rep["best_score"] <= rep["default_score"] + 1e-9
+    # constants restored after fitting
+    assert engine.K == before_k and engine.BASE_TOTAL == before_bt
+
+
+def test_cv_fit_pooled_keys_present():
+    frames = {"a": _toy_df(), "b": _toy_df()}
+    grid = {"K": [200.0, 240.0], "BASE_TOTAL": [2.5, 2.6]}
+    rep = backtest.cv_fit(frames, grid)
+    assert len(rep["folds"]) == 2
+    assert rep["n"] == 6
+    for key in ("pooled_fitted", "pooled_default", "pooled_improvement"):
+        assert key in rep
+
+
+def test_fit_report_real_data_keeps_constants_unfitted_expert():
+    """The CV fit must run on real holdouts and flag EXPERT_W as unfittable."""
+    rep = backtest.fit_report(grid={"K": [200.0, 240.0], "BASE_TOTAL": [2.6, 2.9]})
+    assert "cross_validation" in rep and "final_fit_all_data" in rep
+    assert rep["current"]["K"] == engine.K
+    assert "EXPERT_W" in rep["expert_w_note"]
+
+
 def test_real_2022_report_beats_baselines():
     """The shipped 2022 dataset: the model must show positive skill."""
     rep = backtest.run()

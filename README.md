@@ -595,9 +595,10 @@ backtest.sweep(backtest.load(), "K", [180, 200, 220])   # tune a constant by mea
 On the shipped 2022 data the model scores **Brier ≈ 0.587 / Log-loss ≈ 1.009**,
 about **+12%** better than blind 1/3 guessing and **+8%** better than knowing
 only the base rate — i.e. it has genuine, measured skill, not just plausible
-output. The `K` sweep confirms the current `K = 200` is near-optimal (best Brier
-sits at `K ≈ 180–200`). The dashboard exposes all of this under the **"אמינות
-המודל"** (Model Reliability) view, including the calibration curve.
+output. The dashboard exposes all of this under the **"אמינות המודל"** (Model
+Reliability) view, including the calibration curve. (Whether the shipped
+`K = 240` is well-chosen is settled by cross-validation, not a single-tournament
+sweep — see *Fitting K / BASE_TOTAL* below.)
 
 ### FIFA vs Elo (CR recommendation, measured)
 
@@ -689,6 +690,40 @@ python -m src.backtest --holdout      # now pools 2022 + euro2024 + ...
 Because the base rating *is* derived Elo, the config comparison for these
 tournaments measures `fifa_only` (Elo base) vs `+h2h` / `+form` / `all` — exactly
 the "do the nudges earn their place?" question, now answerable across tournaments.
+
+### Fitting `K` / `BASE_TOTAL` (CR's "don't pick K by intuition", measured)
+
+The review's other headline ask was to **fit** the engine constants from data
+instead of hand-picking them. `backtest.fit_report` does exactly that, and — to
+avoid the trap of fitting and then claiming improvement on the *same* matches —
+uses **leave-one-tournament-out cross-validation**: fit the grid on four
+tournaments, score the constants on the fifth the fit never saw, rotate.
+
+```bash
+python -m src.backtest --fit          # CV verdict + final all-data fit
+python -m src.backtest --fit --json   # structured output
+```
+
+Result across the 294-match holdout (grid `K ∈ [150,400]`, `BASE_TOTAL ∈
+[2.0,3.4]`, minimising log-loss):
+
+| | pooled out-of-sample log-loss |
+|---|---|
+| shipped `K = 240`, `BASE_TOTAL = 2.6` | **0.9730** |
+| re-fitted per fold | 0.9763 |
+
+Re-fitting is **−0.0033 *worse*** out of sample, and the per-fold optima swing
+wildly (`K` 180–230, `BASE_TOTAL` 2.7–3.2) — the signature of fitting
+tournament-specific noise. The all-data in-sample "best" (`K ≈ 200`) beats the
+default by a trivial +0.0019 that the CV shows does not generalise. **Verdict:
+the hand-picked constants are already as good as any fit, so they stay.** We
+answered the CR's challenge by measuring it, and the measurement vindicates the
+defaults rather than overriding them.
+
+`EXPERT_W` is **not** fittable here: none of the historical holdouts carry
+`exp_home`/`exp_away` columns, so a sweep would be a silent no-op. Fitting it
+honestly needs expert scorelines on the backtest data, which we do not have —
+`fit_report` says so explicitly rather than reporting a fake optimum.
 The H2H/form signals are computed locally from the same fetched histories
 (`engine.h2h_supremacy` / `engine.form_supremacy`), so no extra API calls and
 nothing hand-entered.
