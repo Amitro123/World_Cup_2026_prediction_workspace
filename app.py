@@ -225,8 +225,23 @@ elif view == "משחק חי":
     ag = c3.number_input(f"שערי {team(m.away_id)}", 0, 20,
                          int(m.away_goals) if pd.notna(m.away_goals) else 0)
 
-    state = ds.update_match_state(mid, int(minute), int(hg), int(ag))
+    r1, r2 = st.columns(2)
+    _red_h0 = int(m.red_home) if ("red_home" in m.index and pd.notna(m.red_home)) else 0
+    _red_a0 = int(m.red_away) if ("red_away" in m.index and pd.notna(m.red_away)) else 0
+    red_h = r1.number_input(f"🟥 כרטיסים אדומים {team(m.home_id)}", 0, 5, _red_h0,
+                            help="נבחרת בחסר שחקן יוצרת פחות ומקבלת יותר — המודל "
+                                 "מתאים את קצב השערים לזמן שנותר.")
+    red_a = r2.number_input(f"🟥 כרטיסים אדומים {team(m.away_id)}", 0, 5, _red_a0)
+
+    state = ds.update_match_state(mid, int(minute), int(hg), int(ag),
+                                  red_home=int(red_h), red_away=int(red_a))
     p = state["probabilities"]
+
+    if red_h != red_a:
+        down = team(m.home_id) if red_h > red_a else team(m.away_id)
+        up = team(m.away_id) if red_h > red_a else team(m.home_id)
+        st.caption(f"⚠️ נחיתות מספרית: {down} בחסר שחקן — קצב הסיכויים הוטה לטובת {up} "
+                   f"לזמן שנותר.")
 
     st.subheader(f"{team(m.home_id)} {hg} - {ag} {team(m.away_id)}  ·  דקה {minute}")
     pc1, pc2, pc3 = st.columns(3)

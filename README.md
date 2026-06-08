@@ -167,17 +167,27 @@ probs = ds.pre_match_probs("A1", apply_news=False)
 briefing = ds.match_briefing("A1")
 ```
 
-`update_match_state(match_id, minute, home_goals, away_goals, rating_override=None, use_news=True)`
+`update_match_state(match_id, minute, home_goals, away_goals, rating_override=None, use_news=True, red_home=0, red_away=0)`
 — `rating_override={"home": <fifa>, "away": <fifa>}` overrides stored ratings for
-a single computation; `use_news=True` also applies active news adjustments.
+a single computation; `use_news=True` also applies active news adjustments;
+`red_home` / `red_away` set each side's red cards (see *Red cards* below).
 
 **`ProbabilityModel`** (`src/engine.py`) — the swappable model interface:
 
 - `pre_match(rating_home, rating_away, neutral=False, expert=None, h2h_sup=0.0, form_sup=0.0)`
-- `in_play(rating_home, rating_away, minute, home_goals, away_goals, expert=None, h2h_sup=0.0, form_sup=0.0)`
+- `in_play(rating_home, rating_away, minute, home_goals, away_goals, expert=None, h2h_sup=0.0, form_sup=0.0, red_home=0, red_away=0)`
 
 Both return a dict with `p_home`, `p_draw`, `p_away`, and the underlying
-`lambda_home` / `lambda_away`.
+`lambda_home` / `lambda_away` (in-play also returns `red_mult_home/away`).
+
+**Red cards (in-play, CR ask).** A team reduced to 10 men creates fewer chances
+and concedes more, so for the **remaining time** the engine scales the man-down
+side's expected goals by `RED_CARD_OWN = 0.74` and the opponent's by
+`RED_CARD_OPP = 1.40` (`engine.red_card_multipliers`, composing for multiple /
+both-side dismissals). The effect correctly vanishes at full time (no time left
+to exploit the advantage). The Live Match view exposes a 🟥 counter per side and
+flags the numerical disadvantage. Red counts persist to `matches.csv`
+(`red_home` / `red_away`).
 
 ---
 

@@ -118,6 +118,14 @@ def blend_strength(
 ET_LAMBDA_SCALE = 0.33
 SHOOTOUT_CAP = 0.53
 
+# In-play red cards. A team reduced to 10 men creates fewer chances and concedes
+# more space: empirically its own scoring rate falls to ~0.7-0.75x while the
+# opponent's rises to ~1.3-1.4x. These multipliers apply to the REMAINING-time
+# expected goals only, and compose multiplicatively for multiple / both-side
+# dismissals (see `red_card_multipliers`).
+RED_CARD_OWN = 0.74   # attack multiplier for the side that is a man down
+RED_CARD_OPP = 1.40   # attack multiplier for the side with the man advantage
+
 # --- Head-to-head (past meetings) signal ------------------------------------
 # FIFA points already capture most of a team's strength, so H2H is a small,
 # bounded nudge: a team that has historically beaten this specific opponent gets
@@ -472,15 +480,18 @@ class ProbabilityModel:
         expert: tuple[float, float] | None = None,
         h2h_sup: float = 0.0,
         form_sup: float = 0.0,
+        red_home: int = 0,
+        red_away: int = 0,
     ) -> dict[str, float]:
         lam_h, lam_a = expected_goals(
             rating_home, rating_away, neutral=neutral, expert=expert,
             h2h_sup=h2h_sup, form_sup=form_sup,
         )
         remaining = max(0.0, (90 - minute) / 90.0)
+        red_h, red_a = red_card_multipliers(red_home, red_away)
         out = _grid_probs(
-            lam_h * remaining,
-            lam_a * remaining,
+            lam_h * remaining * red_h,
+            lam_a * remaining * red_a,
             base_home=home_goals,
             base_away=away_goals,
             dixon_coles=False,
@@ -488,6 +499,8 @@ class ProbabilityModel:
         out["lambda_home"] = lam_h
         out["lambda_away"] = lam_a
         out["remaining_fraction"] = remaining
+        out["red_mult_home"] = red_h
+        out["red_mult_away"] = red_a
         return out
 
 
@@ -515,6 +528,20 @@ def outcome_from_score(home_goals: int, away_goals: int) -> str:
 
 
 # --- sampling helpers (for Monte-Carlo tournament simulation) ----------------
+
+def red_card_multipliers(red_home: int = 0, red_away: int = 0) -> tuple[float, float]:
+    """Expected-goals multipliers (home, away) given each side's red cards.
+
+    Each home dismissal scales home's scoring rate by RED_CARD_OWN and away's by
+    RED_CARD_OPP (a man up); away dismissals do the mirror. Effects compose, so
+    two home reds apply RED_CARD_OWN twice. 11-vs-11 returns (1.0, 1.0).
+    """
+    red_home = max(0, int(red_home))
+    red_away = max(0, int(red_away))
+    mh = (RED_CARD_OWN ** red_home) * (RED_CARD_OPP ** red_away)
+    ma = (RED_CARD_OWN ** red_away) * (RED_CARD_OPP ** red_home)
+    return mh, ma
+
 
 def sample_poisson(lam: float, rng) -> int:
     """Knuth's algorithm — Poisson sample without numpy."""

@@ -476,12 +476,17 @@ class DataStore:
         away_goals: int,
         rating_override: dict | None = None,
         use_news: bool = True,
+        red_home: int = 0,
+        red_away: int = 0,
     ) -> dict:
         """Persist a live state for a match and return all derived probabilities.
 
         rating_override (optional): {"home": <fifa>, "away": <fifa>} to override
         the stored FIFA ratings for this single computation.
         use_news: also apply active news adjustments for this match.
+        red_home / red_away: red cards shown to each side. A team a man down
+        attacks less and concedes more for the remaining time (engine constants
+        RED_CARD_OWN / RED_CARD_OPP).
         """
         m = self.match(match_id)
         if rating_override:
@@ -501,11 +506,14 @@ class DataStore:
         probs = self.model.in_play(
             r_home, r_away, minute, home_goals, away_goals,
             neutral=neutral, expert=expert, h2h_sup=h2h_sup, form_sup=form_sup,
+            red_home=red_home, red_away=red_away,
         )
         if mult_h != 1.0 or mult_a != 1.0:
+            # Re-grid with the news multipliers, preserving the red-card effect
+            # already baked into the in_play lambdas (red_mult_*).
             remaining = probs.get("remaining_fraction", 0.0)
-            lam_h = probs["lambda_home"] * remaining * mult_h
-            lam_a = probs["lambda_away"] * remaining * mult_a
+            lam_h = probs["lambda_home"] * remaining * mult_h * probs["red_mult_home"]
+            lam_a = probs["lambda_away"] * remaining * mult_a * probs["red_mult_away"]
             regrid = engine.probs_from_lambdas(lam_h, lam_a, dixon_coles=False)
             probs.update({k: regrid[k] for k in ("p_home", "p_draw", "p_away")})
 
@@ -514,6 +522,8 @@ class DataStore:
         self.matches.at[idx, "home_goals"] = home_goals
         self.matches.at[idx, "away_goals"] = away_goals
         self.matches.at[idx, "status"] = "finished" if finished else "live"
+        self.matches.at[idx, "red_home"] = int(red_home)
+        self.matches.at[idx, "red_away"] = int(red_away)
 
         result = {
             "match_id": match_id,
@@ -522,6 +532,7 @@ class DataStore:
             "minute": minute,
             "score": {"home": home_goals, "away": away_goals},
             "status": "finished" if finished else "live",
+            "red_cards": {"home": int(red_home), "away": int(red_away)},
             "probabilities": {
                 "home": round(probs["p_home"], 4),
                 "draw": round(probs["p_draw"], 4),
@@ -554,7 +565,9 @@ class DataStore:
         minute = int(m.minute) if pd.notna(m.minute) else 0
         hg = int(m.home_goals) if pd.notna(m.home_goals) else 0
         ag = int(m.away_goals) if pd.notna(m.away_goals) else 0
-        return self.update_match_state(match_id, minute, hg, ag)
+        rh = int(m.red_home) if ("red_home" in m.index and pd.notna(m.red_home)) else 0
+        ra = int(m.red_away) if ("red_away" in m.index and pd.notna(m.red_away)) else 0
+        return self.update_match_state(match_id, minute, hg, ag, red_home=rh, red_away=ra)
 
     def pre_match_probs(self, match_id: str, apply_news: bool = False) -> dict:
         m = self.match(match_id)
