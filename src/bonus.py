@@ -74,6 +74,25 @@ def _notna(x) -> bool:
     return x == x and x is not None  # NaN != NaN
 
 
+# Confidence labels for the bonus summary table. The idea: a viewer who only
+# glances at the headline table should still see which answers are firm and
+# which are coin-flips. Player-level answers are always "estimate"; team-level
+# answers get a 3-level label from the margin between the top pick and #2.
+CONF_SOLID = "איתן ✅"
+CONF_MEDIUM = "בינוני"
+CONF_CLOSE = "צמוד 🔀"
+CONF_ESTIMATE = "הערכה ⚠️"
+
+
+def _level(gap: float, hi: float, mid: float) -> str:
+    """Map a #1-vs-#2 margin to a 3-level confidence label."""
+    if gap >= hi:
+        return CONF_SOLID
+    if gap >= mid:
+        return CONF_MEDIUM
+    return CONF_CLOSE
+
+
 def _find_opener(ds):
     pair = frozenset(OPENER_TEAMS)
     for _, m in ds.matches.iterrows():
@@ -209,35 +228,51 @@ def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict
             "note": "שאלת שחקן — אין players.csv; בורר מרכזי בנבחרת שצולחת עמוק.",
         }
 
+    # --- confidence labels: how clearly does the top pick beat #2? ---
+    runnerup_gap = (runnerup[runnerup_pick] - runnerup[second]) if second is not None else 99.0
+    runnerup_conf = CONF_CLOSE if runnerup_tie else _level(runnerup_gap, 4.0, 1.5)
+    first_goal_conf = _level(abs(lam_h - lam_a), 0.6, 0.25)
+    punching_conf = _level(
+        most_conceded[0][1] - most_conceded[1][1] if len(most_conceded) > 1 else 99.0, 0.5, 0.2)
+    most_goals_conf = _level(
+        most_scored[0][1] - most_scored[1][1] if len(most_scored) > 1 else 99.0, 0.5, 0.2)
+    messi_conf = _level(abs(depth(arg) - depth(por)), 60.0, 25.0)
+
     return {
         "runner_up": {
             "answer": runnerup_answer,
+            "confidence": runnerup_conf,
             "note": (f"בהנחה ש{name(champion)} אלופה; הסגנית הסבירה הבאה. "
                      + ("הפסגה צפופה בתוך רעש הסימולציה — שתי המועמדות כמעט שוות."
                         if runnerup_tie else "")).strip(),
             "tie": runnerup_tie,
             "table": top_finalists,
         },
-        "top_assists": top_assists,
+        "top_assists": {**top_assists, "confidence": CONF_ESTIMATE},
         "first_goal": {
             "answer": name(opener_fav),
+            "confidence": first_goal_conf,
             "note": f"משחק פתיחה: {name(opener.home_id)} נגד {name(opener.away_id)}; "
                     f"תוחלת שערים {lam_h:.2f}-{lam_a:.2f}.",
         },
         "punching_bag": {
             "answer": name(most_conceded[0][0]),
+            "confidence": punching_conf,
             "table": [{"team": name(t), "goals_against": round(v, 2)} for t, v in most_conceded],
         },
         "most_group_goals": {
             "answer": name(most_scored[0][0]),
+            "confidence": most_goals_conf,
             "table": [{"team": name(t), "goals_for": round(v, 2)} for t, v in most_scored],
         },
         "messi_vs_ronaldo": {
             "answer": further,
+            "confidence": messi_conf,
             "table": [stage_row(arg), stage_row(por)],
         },
         "mbappe_vs_vinicius": {
             "answer": more_goals,
+            "confidence": CONF_ESTIMATE,
             "player_level": True,
             "note": mbv_note,
         },

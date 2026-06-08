@@ -577,23 +577,23 @@ elif view == "bonus":
     if "bonus" in st.session_state:
         b = st.session_state["bonus"]
 
-        def flag(d):
-            return " ⚠️ (הערכה ברמת שחקן)" if d.get("player_level") else ""
-
-        def tie_flag(d):
-            return " 🔀 (צמד צמוד — תיקו בתוך רעש הסימולציה)" if d.get("tie") else ""
+        def row(q, key):
+            return {"שאלה": q, "תשובה": b[key]["answer"],
+                    "ביטחון": b[key].get("confidence", "")}
 
         st.subheader("📋 תשובות מומלצות")
+        st.caption("עמודת **ביטחון**: איתן ✅ = הכרעה ברורה · בינוני = יתרון מתון · "
+                   "צמוד 🔀 = תיקו בתוך רעש הסימולציה · הערכה ⚠️ = ברמת השחקן.")
         st.dataframe(
             pd.DataFrame(
                 [
-                    {"שאלה": "סגנית האלופה" + tie_flag(b["runner_up"]), "תשובה": b["runner_up"]["answer"]},
-                    {"שאלה": "מלך הבישולים" + flag(b["top_assists"]), "תשובה": b["top_assists"]["answer"]},
-                    {"שאלה": "שער ראשון בטורניר", "תשובה": b["first_goal"]["answer"]},
-                    {"שאלה": "שק החבטות (הכי הרבה ספיגות)", "תשובה": b["punching_bag"]["answer"]},
-                    {"שאלה": "הכי הרבה שערים בשלב הבתים", "תשובה": b["most_group_goals"]["answer"]},
-                    {"שאלה": "מסי vs רונאלדו (מי רחוק יותר)", "תשובה": b["messi_vs_ronaldo"]["answer"]},
-                    {"שאלה": "אמבפה vs ויניסיוס (מי כובש יותר)" + flag(b["mbappe_vs_vinicius"]), "תשובה": b["mbappe_vs_vinicius"]["answer"]},
+                    row("סגנית האלופה", "runner_up"),
+                    row("מלך הבישולים", "top_assists"),
+                    row("שער ראשון בטורניר", "first_goal"),
+                    row("שק החבטות (הכי הרבה ספיגות)", "punching_bag"),
+                    row("הכי הרבה שערים בשלב הבתים", "most_group_goals"),
+                    row("מסי vs רונאלדו (מי רחוק יותר)", "messi_vs_ronaldo"),
+                    row("אמבפה vs ויניסיוס (מי כובש יותר)", "mbappe_vs_vinicius"),
                 ]
             ),
             use_container_width=True,
