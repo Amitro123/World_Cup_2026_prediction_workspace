@@ -26,7 +26,7 @@ DATA_FILES = {
     "groups": "groups.csv",
     "teams": "teams.csv",
     "matches": "matches.csv",
-    "odds": "odds.csv",
+    "model_probs": "model_probs.csv",  # the model's OWN 1X2 probs (NOT market odds)
     "my_predictions": "my_predictions.csv",
     "expert": "expert_scores.csv",
     "news": "news_adjustments.csv",
@@ -58,7 +58,7 @@ class DataStore:
     groups: pd.DataFrame
     teams: pd.DataFrame
     matches: pd.DataFrame
-    odds: pd.DataFrame
+    model_probs: pd.DataFrame
     predictions: pd.DataFrame
     expert: pd.DataFrame
     news: pd.DataFrame
@@ -89,7 +89,7 @@ class DataStore:
             groups=_read("groups"),
             teams=_read("teams"),
             matches=_read("matches"),
-            odds=_read("odds", required=False),
+            model_probs=_read("model_probs", required=False),
             predictions=_read("my_predictions", required=False),
             expert=_read("expert", required=False),
             news=news,

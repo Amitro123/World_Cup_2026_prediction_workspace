@@ -48,7 +48,7 @@ WorldCup2026/
 │   ├── groups.csv            # the 12 groups
 │   ├── teams.csv             # 48 teams + FIFA points + 0–100 power rating
 │   ├── matches.csv           # 72 group fixtures + research scoreline + live state
-│   ├── odds.csv              # pre-match 1X2 probabilities (model-derived)
+│   ├── model_probs.csv       # pre-match 1X2 probabilities (model-derived)
 │   ├── expert_scores.csv     # expert scoreline per match (blended into the model)
 │   ├── my_predictions.csv    # your predictions (seeded from research)
 │   ├── players.csv           # key players + goal/assist share (bonus questions)
@@ -77,7 +77,7 @@ WorldCup2026/
 ├── fetch_holdout.py          # builds a holdout backtest CSV (derived Elo, no leakage)
 ├── fetch_odds.py             # fills market_odds.csv (The Odds API, free tier)
 ├── fetch_player_props.py     # (dormant) parses player-prop payloads -> players_market.csv
-├── build_data.py             # builds fifa_points, expert_scores.csv, odds.csv, predictions
+├── build_data.py             # builds fifa_points, expert_scores.csv, model_probs.csv, predictions
 ├── build_excel.py            # builds the Excel template
 └── requirements.txt
 ```
@@ -215,15 +215,15 @@ Both return a dict with `p_home`, `p_draw`, `p_away`, and the underlying
 | `home_goals` / `away_goals` | int | Current/final score (blank if unplayed) |
 | `doc_pred_home` / `doc_pred_away` | int | Research scoreline |
 
-### `odds.csv`
+### `model_probs.csv`
 | Column | Type | Description |
 |--------|------|-------------|
 | `match_id` | str | Match key |
 | `p_home` / `p_draw` / `p_away` | float | **Model-derived** 1X2 probabilities (engine output, not a bookmaker) |
 
-> Despite the name, `odds.csv` holds the model's own probabilities. **Bookmaker**
-> odds live in `market_odds.csv` (below) and are compared to the model in the
-> "מול בוקמייקרים" dashboard view.
+> `model_probs.csv` holds the model's own probabilities (renamed from the old
+> `odds.csv` to remove the footgun). **Bookmaker** odds live in `market_odds.csv`
+> (below) and are compared to the model in the "מול בוקמייקרים" dashboard view.
 
 ### `market_odds.csv` (bookmaker anchor — optional)
 Closing/pre-match **bookmaker** 1X2 odds, used to anchor and sanity-check the
@@ -319,7 +319,7 @@ ships dormant; the model props in `src/playerprops.py` display with or without i
 1. Edit the CSV files in `data/` (keep the headers).
 2. Rebuild derived data:
    ```bash
-   python build_data.py     # fifa_points + power_rating + expert_scores.csv + odds.csv + predictions
+   python build_data.py     # fifa_points + power_rating + expert_scores.csv + model_probs.csv + predictions
    python build_excel.py    # refresh the Excel template
    ```
 

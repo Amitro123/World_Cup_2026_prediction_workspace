@@ -211,6 +211,83 @@ def evaluate(
             setattr(engine, name, val)
 
 
+def per_match_brier(
+    df: pd.DataFrame,
+    model: engine.ProbabilityModel | None = None,
+    config: dict | None = None,
+    elo_weight: float = 0.0,
+) -> tuple[list[float], list[float]]:
+    """Per-match Brier for the model and the uniform baseline (parallel lists).
+
+    Returned element-by-element so a bootstrap can resample matches; summed and
+    divided by n they reproduce `evaluate(...).brier` and the uniform baseline.
+    """
+    model = model or engine.ProbabilityModel()
+    stats = team_stats(df) if elo_weight > 0 else None
+    model_b: list[float] = []
+    unif_b: list[float] = []
+    for _, row in df.iterrows():
+        actual = engine.outcome_from_score(int(row["home_goals"]), int(row["away_goals"]))
+        p = predict_row(row, model, elo_weight=elo_weight, stats=stats, config=config)
+        mb = ub = 0.0
+        for o in OUTCOMES:
+            y = 1.0 if o == actual else 0.0
+            mb += (p[o] - y) ** 2
+            ub += (1 / 3 - y) ** 2
+        model_b.append(mb)
+        unif_b.append(ub)
+    return model_b, unif_b
+
+
+def skill_ci(
+    df: pd.DataFrame,
+    n_boot: int = 2000,
+    seed: int = 12345,
+    model: engine.ProbabilityModel | None = None,
+    config: dict | None = None,
+    elo_weight: float = 0.0,
+) -> dict:
+    """Bootstrap 95% CI on the skill-vs-uniform score.
+
+    Resamples matches with replacement `n_boot` times; each replicate's skill is
+    ``1 - mean(model_brier) / mean(uniform_brier)``. Reports the point estimate
+    with a percentile interval, so a headline like "+12% over random" carries its
+    uncertainty instead of standing as a bare number (the CR's #9 honesty ask).
+
+    Note on "Brier vs market" (CR #10): a true market skill score needs the
+    historical *closing odds* for these holdout tournaments, which we do not have
+    (market_odds.csv holds only forward 2026 lines, with no results yet). Until
+    those are sourced, this CI on the vs-uniform skill is the honest substitute —
+    it quantifies how solid the "better than random" claim is.
+    """
+    import random
+
+    mb, ub = per_match_brier(df, model=model, config=config, elo_weight=elo_weight)
+    n = len(mb)
+    if n == 0:
+        return {"skill": 0.0, "ci95_lo": 0.0, "ci95_hi": 0.0, "n_boot": n_boot, "n": 0}
+    point = 1 - (sum(mb) / n) / (sum(ub) / n)
+    rng = random.Random(seed)
+    skills: list[float] = []
+    for _ in range(n_boot):
+        sm = su = 0.0
+        for _ in range(n):
+            j = rng.randrange(n)
+            sm += mb[j]
+            su += ub[j]
+        skills.append(1 - sm / su if su else 0.0)
+    skills.sort()
+    lo = skills[int(0.025 * n_boot)]
+    hi = skills[min(n_boot - 1, int(0.975 * n_boot))]
+    return {
+        "skill": round(point, 4),
+        "ci95_lo": round(lo, 4),
+        "ci95_hi": round(hi, 4),
+        "n_boot": n_boot,
+        "n": n,
+    }
+
+
 def baselines(df: pd.DataFrame) -> dict[str, Metrics]:
     """Reference scores so the model's numbers have context.
 
@@ -448,6 +525,7 @@ def holdout(sources: dict[str, str] | None = None) -> dict:
     pooled_df = pd.concat(list(frames.values()), ignore_index=True)
     pooled = _block(pooled_df)
     pooled["calibration"] = calibration_table(pooled_df)
+    pooled["skill_ci"] = skill_ci(pooled_df)
     return {"tournaments": per, "pooled": pooled}
 
 
@@ -554,6 +632,13 @@ def _print_holdout(rep: dict) -> None:
     print(f"  MODEL  Brier={m['brier']:.4f}  LogLoss={m['log_loss']:.4f}  "
           f"Acc={m['accuracy']:.3f}   skill vs uniform: "
           f"{pl['skill_vs_uniform']:+.1%}")
+    ci = pl.get("skill_ci")
+    if ci:
+        print(f"  skill 95% CI (bootstrap, {ci['n_boot']} resamples): "
+              f"[{ci['ci95_lo']:+.1%}, {ci['ci95_hi']:+.1%}]  "
+              f"(point {ci['skill']:+.1%}, n={ci['n']})")
+        print("  note: vs-market Brier needs historical closing odds we don't "
+              "have for these tournaments; this CI is the honest substitute.")
     for name, b in pl["baselines"].items():
         print(f"  {name:9} Brier={b['brier']:.4f}")
     print("\nConfig comparison (pooled — does each signal earn its place?):")

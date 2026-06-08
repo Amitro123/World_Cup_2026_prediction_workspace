@@ -28,7 +28,7 @@ def _dump(ws, df):
 def main():
     teams = pd.read_csv(os.path.join(DATA, "teams.csv"))
     matches = pd.read_csv(os.path.join(DATA, "matches.csv"))
-    odds = pd.read_csv(os.path.join(DATA, "odds.csv"))
+    odds = pd.read_csv(os.path.join(DATA, "model_probs.csv"))
     preds = pd.read_csv(os.path.join(DATA, "my_predictions.csv"))
 
     wb = Workbook()

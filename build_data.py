@@ -9,8 +9,10 @@ It:
    (data/cowork_model.json) and a 0-100 `power_rating` rescale for display.
 2. Writes expert_scores.csv (per-match expert scoreline targets) from
    data/cowork_expert.json, mapped to this workspace's match_ids.
-3. Generates odds.csv (pre-match win/draw/loss per match) with the FIFA-points
-   Dixon-Coles engine, blended with the expert scorelines.
+3. Generates model_probs.csv (pre-match win/draw/loss per match) with the
+   FIFA-points Dixon-Coles engine, blended with the expert scorelines. (Named
+   model_probs, NOT odds — these are the model's own probabilities; bookmaker
+   odds live in market_odds.csv.)
 4. Seeds my_predictions.csv from the research-doc scorelines (doc_pred_*),
    only for matches you have not already predicted.
 
@@ -164,8 +166,8 @@ def main():
     print(f"expert_scores.csv: {len(expert_df)} expert scorelines mapped")
 
     odds = build_odds(matches, teams, expert_df)
-    odds.to_csv(os.path.join(DATA, "odds.csv"), index=False)
-    print(f"odds.csv: pre-match 1X2 for {len(odds)} matches")
+    odds.to_csv(os.path.join(DATA, "model_probs.csv"), index=False)
+    print(f"model_probs.csv: pre-match 1X2 for {len(odds)} matches")
 
     pred_path = os.path.join(DATA, "my_predictions.csv")
     existing = pd.read_csv(pred_path) if os.path.exists(pred_path) else pd.DataFrame()

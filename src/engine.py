@@ -14,7 +14,7 @@ Model summary
    in an easy group — sits ~6th here, while Spain stays top-2, matching the docs.)
 2. Pre-match goals (Cowork-tuned formula):
        sup   = (rating_home - rating_away) / K          (+ home advantage)
-       total = BASE_TOTAL + |r_h + r_a - 2*FIFA_MEAN| / 4000   (stronger ties score more)
+       total = BASE_TOTAL + |r_h + r_a - 2*FIFA_MEAN| * TOTAL_STRENGTH  (flat by default)
        λ_home = max(MIN_LAMBDA, (total + sup) / 2)
        λ_away = max(MIN_LAMBDA, (total - sup) / 2)
    The win/draw/loss grid uses a Dixon-Coles low-score correction (DC_RHO) so
@@ -45,6 +45,12 @@ K = 240.0            # FIFA points per 1 goal of supremacy (calibrated to the
                      # favourites; K=240 is the knee of the market-KL/holdout-
                      # Brier trade-off — most of the alignment gain, ~0.4% Brier cost)
 BASE_TOTAL = 2.6     # neutral expected total goals for an even tie
+TOTAL_STRENGTH = 0.0 # goals added to the total per FIFA point of combined-strength
+                     # deviation from 2*FIFA_MEAN. Was 1/4000 (=0.00025), which made
+                     # stronger pairs score more — but across 294 holdout matches the
+                     # correlation between combined strength and total goals is ~0
+                     # (-0.014), so the term pointed at a signal that isn't there.
+                     # Flattened to 0.0 (constant BASE_TOTAL); re-enable to tune.
 FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
 DC_RHO = -0.06       # Dixon-Coles low-score dependence
 HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
@@ -102,8 +108,10 @@ def blend_strength(
 # LIMITED edge there: shootouts in particular are close to a coin flip regardless
 # of the skill gap. We therefore resolve a knockout draw proportionally to win
 # strength but cap the favourite's advance probability at SHOOTOUT_CAP (so even a
-# huge favourite is at most ~58% to survive ET/pens, not 80%+).
-SHOOTOUT_CAP = 0.58
+# huge favourite is at most ~53% to survive ET/pens, not 80%+). 0.53 matches the
+# empirical long-run favourite win rate in penalty shootouts (~52-55%); 0.58 was
+# a slightly generous heuristic.
+SHOOTOUT_CAP = 0.53
 
 # --- Head-to-head (past meetings) signal ------------------------------------
 # FIFA points already capture most of a team's strength, so H2H is a small,
@@ -364,7 +372,7 @@ def expected_goals(
         sup += HOME_SUP
     sup += h2h_sup
     sup += form_sup
-    total = BASE_TOTAL + abs(rating_home + rating_away - 2.0 * FIFA_MEAN) / 4000.0
+    total = BASE_TOTAL + abs(rating_home + rating_away - 2.0 * FIFA_MEAN) * TOTAL_STRENGTH
     lam_home = max(MIN_LAMBDA, (total + sup) / 2.0)
     lam_away = max(MIN_LAMBDA, (total - sup) / 2.0)
     if expert is not None:
