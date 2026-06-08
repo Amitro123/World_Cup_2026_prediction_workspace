@@ -130,6 +130,21 @@ def cmd_form(args) -> None:
     _print(fetch_form.run(teams, args.cutoff, args.write))
 
 
+def cmd_fifa(args) -> None:
+    """Refresh FIFA ranking points (base strength) from the web.
+
+    Dry-run by default (prints proposed old -> new points); with --write it
+    writes verified values into data/teams.csv via set_team_rating, re-normalising
+    power_rating across all teams. The automated, all-teams counterpart of the
+    manual `rate` command.
+    """
+    import fetch_fifa_points
+
+    ds = DataStore.load(DATA)
+    teams = [args.team] if args.team else list(ds.teams.team_id)
+    _print(fetch_fifa_points.run(ds, teams, args.write, args.min_delta))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Hermes <-> WorldCup2026 bridge")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -173,6 +188,13 @@ def build_parser() -> argparse.ArgumentParser:
     fm.add_argument("--cutoff", type=int, default=2025, help="earliest year to keep")
     fm.add_argument("--write", action="store_true", help="merge rows into data/form.csv")
     fm.set_defaults(func=cmd_form)
+
+    ff = sub.add_parser("fifa", help="refresh FIFA ranking points (base strength) from the web")
+    ff.add_argument("--team", default=None, help="only this team, e.g. --team MEX")
+    ff.add_argument("--min-delta", type=float, default=1.0,
+                    help="only propose changes ≥ this many points")
+    ff.add_argument("--write", action="store_true", help="write values into data/teams.csv")
+    ff.set_defaults(func=cmd_fifa)
     return p
 
 
