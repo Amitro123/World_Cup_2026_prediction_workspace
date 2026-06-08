@@ -8,6 +8,7 @@ import os
 import random
 import subprocess
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -29,6 +30,52 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+@st.cache_data(show_spinner=False)
+def _pooled_calibration() -> tuple[list[dict], int]:
+    """Calibration bins + match count pooled over every data/backtest_*.csv.
+
+    A larger sample (≈294 matches) fills the reliability bins far better than the
+    single 64-match 2022 set, so the diagram is less jumpy.
+    """
+    import glob
+
+    paths = sorted(glob.glob(os.path.join(DATA_DIR, "backtest_*.csv")))
+    frames = [pd.read_csv(p) for p in paths]
+    if not frames:
+        return [], 0
+    df = pd.concat(frames, ignore_index=True)
+    return backtest.calibration_table(df), int(len(df))
+
+
+def _reliability_chart(cal: pd.DataFrame):
+    """A true reliability diagram: predicted (x) vs observed (y) with the y=x
+    perfect-calibration reference. Points on the diagonal = well calibrated;
+    above = model under-confident, below = over-confident. Point size = bin n."""
+    diag = pd.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0]})
+    ideal = (
+        alt.Chart(diag)
+        .mark_line(strokeDash=[6, 4], color="#888")
+        .encode(x=alt.X("x", title="הסתברות חזויה"),
+                y=alt.Y("y", title="תדירות בפועל"))
+    )
+    pts = (
+        alt.Chart(cal)
+        .mark_circle(opacity=0.85, color="#1f77b4")
+        .encode(
+            x=alt.X("ממוצע חזוי", scale=alt.Scale(domain=[0, 1])),
+            y=alt.Y("תדירות בפועל", scale=alt.Scale(domain=[0, 1])),
+            size=alt.Size("n", title="מס' נקודות", scale=alt.Scale(range=[30, 400])),
+            tooltip=["טווח חזוי", "n", "ממוצע חזוי", "תדירות בפועל", "פער"],
+        )
+    )
+    line = (
+        alt.Chart(cal)
+        .mark_line(color="#1f77b4", opacity=0.5)
+        .encode(x="ממוצע חזוי", y="תדירות בפועל")
+    )
+    return (ideal + line + pts).properties(height=360).interactive()
+
 
 PICK_HE = {"H": "ניצחון ביתית", "D": "תיקו", "A": "ניצחון אורחת"}
 STATUS_HE = {
@@ -519,14 +566,29 @@ elif view == "אמינות המודל":
     st.subheader("כיול (Calibration)")
     st.caption("כשהמודל אומר '60%' — האם זה קורה בערך ב-60% מהמקרים? "
                "פער חיובי = המודל זהיר מדי; שלילי = בטוח מדי. מקובץ על H/D/A.")
-    cal = pd.DataFrame(rep["calibration"])
+
+    pooled_cal, pooled_n = _pooled_calibration()
+    src = "מונדיאל 2022 (64 משחקים)"
+    if pooled_n > rep["n"]:
+        src = st.radio(
+            "מקור הנתונים לדיאגרמת הכיול:",
+            [f"מונדיאל 2022 ({rep['n']} משחקים)",
+             f"כל הטורנירים ({pooled_n} משחקים)"],
+            index=1, horizontal=True,
+        )
+    cal_rows = pooled_cal if src.startswith("כל") else rep["calibration"]
+    cal = pd.DataFrame(cal_rows)
     cal.columns = ["טווח חזוי", "n", "ממוצע חזוי", "תדירות בפועל", "פער"]
-    st.dataframe(cal, use_container_width=True, hide_index=True)
+
+    st.caption("דיאגרמת אמינות: כל נקודה = פלח הסתברות. נקודה על הקו המקווקו "
+               "(y=x) = כיול מושלם; מעליו = המודל זהיר מדי, מתחתיו = בטוח מדי. "
+               "גודל הנקודה = כמות התחזיות בפלח.")
     try:
+        st.altair_chart(_reliability_chart(cal), use_container_width=True)
+    except Exception:
         chart = cal.set_index("טווח חזוי")[["ממוצע חזוי", "תדירות בפועל"]]
         st.line_chart(chart)
-    except Exception:
-        pass
+    st.dataframe(cal, use_container_width=True, hide_index=True)
 
     st.subheader("כיול פרמטר K (נקודות FIFA לכל שער עליונות)")
     st.caption("מריצים את הבקטסט על ערכי K שונים — מי שממזער את ה-Brier מכויל "
