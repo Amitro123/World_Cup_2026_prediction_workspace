@@ -120,8 +120,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The browser opens at `http://localhost:8501`. The UI is in Hebrew (RTL); the
-views are:
+The browser opens at `http://localhost:8501`. The UI is Hebrew (RTL) by default;
+a **language selector** (שפה / Language) at the top of the sidebar switches to
+English (LTR) — layout direction, navigation, and page headers re-render in the
+chosen language. Localization strings live in `src/i18n.py` (the navigation radio
+returns a stable view *key*, so adding a language is a data-only change there).
+Deep per-view body text — captions and table column names — is still Hebrew and
+is the next localization phase. The views are:
 
 - **משחקים (Matches)** — all 72 group games, filter by group, 1X2 probabilities,
   and your pick.
@@ -477,10 +482,12 @@ Streamlit and the engine pick up the change on the next run/refresh.
 
 ---
 
-## Automated Data Refresh (`fetch_h2h.py`, `fetch_form.py`)
+## Automated Data Refresh (`fetch_h2h.py`, `fetch_form.py`, `fetch_fifa_points.py`)
 
-`fetch_h2h.py` / `fetch_form.py` refresh the H2H and form signals. Both follow a
-**recommend-don't-apply** philosophy: they print proposed rows and only write
+`fetch_h2h.py` / `fetch_form.py` refresh the H2H and form *signals*;
+`fetch_fifa_points.py` refreshes the model's **base strength** — the FIFA ranking
+points in `teams.csv` that every prediction is built on. All three follow a
+**recommend-don't-apply** philosophy: they print proposed values and only write
 when you pass `--write`.
 
 ### Data source: API-Football (recommended) with scrape fallback
@@ -528,6 +535,22 @@ python fetch_form.py --team MEX     # one team
 python fetch_form.py --write        # fetch + merge into form.csv
 python hermes.py form --team MEX --write      # same, via Hermes
 ```
+
+**`fetch_fifa_points.py`** — current FIFA ranking points per team; writes into
+`teams.csv` via `set_team_rating` (re-normalising `power_rating` across all
+teams), the automated all-teams counterpart of the manual `hermes.py rate`:
+
+```bash
+python fetch_fifa_points.py                  # propose for all teams (dry run)
+python fetch_fifa_points.py --team MEX       # one team
+python fetch_fifa_points.py --min-delta 5    # only changes ≥ 5 points
+python fetch_fifa_points.py --write          # write verified values to teams.csv
+python hermes.py fifa --write                # same, via Hermes
+```
+
+A scrape miss never corrupts a rating — the old value is kept and `--min-delta`
+suppresses sub-noise churn. Writes stamp `data/.data_meta.json` under
+`fifa_points`.
 
 **Rate limiting:** with API-Football, mind the 100/day free budget (see above).
 On the **scrape fallback**, DuckDuckGo throttles bursts, so a full sweep may be

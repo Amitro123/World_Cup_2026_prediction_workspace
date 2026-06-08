@@ -12,20 +12,25 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src import backtest, bonus, engine, knockout
+from src import backtest, bonus, engine, i18n, knockout
 from src.models import DataStore
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
-st.set_page_config(page_title="מונדיאל 2026 — לוח תחזיות", layout="wide")
+st.set_page_config(page_title="World Cup 2026 — Dashboard", layout="wide")
 
-# Right-to-left layout
+# Language is chosen in the sidebar but the direction CSS must be emitted up here,
+# before any widgets render, so read it from session_state (set on the previous
+# run by the language selector). Defaults to Hebrew on first load.
+lang = st.session_state.get("lang", i18n.DEFAULT_LANG)
+_dir = "rtl" if i18n.is_rtl(lang) else "ltr"
+_align = "right" if i18n.is_rtl(lang) else "left"
 st.markdown(
-    """
+    f"""
     <style>
-      .stApp, .block-container { direction: rtl; text-align: right; }
-      [data-testid="stSidebar"] { direction: rtl; text-align: right; }
-      table { direction: rtl; }
+      .stApp, .block-container {{ direction: {_dir}; text-align: {_align}; }}
+      [data-testid="stSidebar"] {{ direction: {_dir}; text-align: {_align}; }}
+      table {{ direction: {_dir}; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -125,17 +130,33 @@ def team(tid: str) -> str:
 
 
 # --- sidebar navigation ------------------------------------------------------
-st.sidebar.title("מונדיאל 2026 ⚽")
-view = st.sidebar.radio(
-    "תצוגה",
-    ["משחקים", "משחק חי", "עדכוני Hermes", "סקירת טורניר", "סימולציית נוקאאוט",
-     "בראקט מסומלץ", "קושי ההגרלה", "שאלות בונוס", "מול בוקמייקרים", "אמינות המודל"],
+st.sidebar.title(i18n.t("app_title", lang))
+
+# Language selector. Writing the choice to session_state and rerunning lets the
+# direction CSS (emitted at the top of the script) pick it up on the next pass.
+_lang_choice = st.sidebar.radio(
+    i18n.t("language", lang),
+    list(i18n.LANGUAGES),
+    index=list(i18n.LANGUAGES).index(lang),
+    format_func=lambda c: i18n.LANGUAGES[c],
+    horizontal=True,
 )
-st.sidebar.caption("מודל: דיקסון-קולס על נקודות דירוג פיפ\"א, בשילוב תחזיות מומחה.")
+if _lang_choice != lang:
+    st.session_state["lang"] = _lang_choice
+    st.rerun()
+
+# Navigation returns a stable view KEY; only the label is translated, so the
+# dispatch below never depends on the active language.
+view = st.sidebar.radio(
+    i18n.t("nav", lang),
+    i18n.VIEW_KEYS,
+    format_func=lambda k: i18n.view_label(k, lang),
+)
+st.sidebar.caption(i18n.t("model_tag", lang))
 
 st.sidebar.divider()
-if st.sidebar.button("🔄 רענן נתונים", use_container_width=True,
-                     help="מושך מ-GitHub את העדכונים האחרונים של Hermes ומרענן את הלוח"):
+if st.sidebar.button(i18n.t("refresh", lang), use_container_width=True,
+                     help=i18n.t("refresh_help", lang)):
     with st.spinner("מושך עדכונים מ-GitHub…"):
         ok, msg = pull_latest()
     if ok:
@@ -152,7 +173,7 @@ if hasattr(ds, "validate"):
     if _issues:
         st.sidebar.warning("⚠️ בעיות בנתונים:\n\n" + "\n".join(f"- {i}" for i in _issues))
     else:
-        st.sidebar.caption("✓ נתונים תקינים")
+        st.sidebar.caption(i18n.t("data_ok", lang))
 
 # Data-coverage indicator — how many of the 48 teams have each optional signal.
 # Missing data is a neutral zero (never corrupts a prediction), so this is an
@@ -180,8 +201,8 @@ if hasattr(ds, "coverage"):
 
 
 # --- view: fixtures ----------------------------------------------------------
-if view == "משחקים":
-    st.header("טבלת משחקי שלב הבתים")
+if view == "fixtures":
+    st.header(i18n.header("fixtures", lang))
     groups = ["הכל"] + list(ds.groups.group_id)
     sel = st.selectbox("סינון לפי בית", groups)
 
@@ -208,8 +229,8 @@ if view == "משחקים":
 
 
 # --- view: live match --------------------------------------------------------
-elif view == "משחק חי":
-    st.header("מעקב משחק חי")
+elif view == "live":
+    st.header(i18n.header("live", lang))
     labels = {
         f"{m.group_id} | {team(m.home_id)} - {team(m.away_id)}": m.match_id
         for _, m in ds.matches.iterrows()
@@ -266,8 +287,8 @@ elif view == "משחק חי":
 
 
 # --- view: Hermes news adjustments ------------------------------------------
-elif view == "עדכוני Hermes":
-    st.header("עדכוני Hermes — חדשות לפני משחק")
+elif view == "hermes":
+    st.header(i18n.header("hermes", lang))
     st.caption(
         "סוכן Hermes (רץ ב-Telegram) סורק אתרי הימורים, חדשות ספורט ופיפ\"א "
         "ומזין כאן עדכונים לפני המשחק (פציעות, שינויי הרכב, תזוזות בקו ההימורים). "
@@ -356,8 +377,8 @@ elif view == "עדכוני Hermes":
 
 
 # --- view: tournament overview ----------------------------------------------
-elif view == "סקירת טורניר":
-    st.header("סקירת טורניר — המצב שלי")
+elif view == "overview":
+    st.header(i18n.header("overview", lang))
     s = ds.my_summary()
     m1, m2, m3 = st.columns(3)
     m1.metric("מספר תחזיות", s["n"])
@@ -409,8 +430,8 @@ elif view == "סקירת טורניר":
 
 
 # --- view: knockout simulation ----------------------------------------------
-elif view == "סימולציית נוקאאוט":
-    st.header("סימולציית נוקאאוט — סיכויי כל נבחרת")
+elif view == "knockout":
+    st.header(i18n.header("knockout", lang))
     st.caption(
         "סימולציית מונטה קרלו של כל הטורניר: שלב הבתים → 1/16 → 1/8 → רבע → "
         "חצי → גמר. תוצאות שכבר הוזנו (status=finished) ננעלות; השאר נדגם מהמודל."
@@ -445,8 +466,8 @@ elif view == "סימולציית נוקאאוט":
 
 
 # --- view: one simulated bracket --------------------------------------------
-elif view == "בראקט מסומלץ":
-    st.header("בראקט מסומלץ — ריצה בודדת")
+elif view == "bracket":
+    st.header(i18n.header("bracket", lang))
     st.caption(
         "הרצה אחת של כל הטורניר (לא הסתברויות) — מי ניצח את מי בכל שלב עד "
         "האלופה. שנה את ה-seed כדי לראות תרחיש אחר."
@@ -473,8 +494,8 @@ elif view == "בראקט מסומלץ":
 
 
 # --- view: draw difficulty / bracket geometry --------------------------------
-elif view == "קושי ההגרלה":
-    st.header("קושי ההגרלה — מי קיבל מסלול קל")
+elif view == "draw":
+    st.header(i18n.header("draw", lang))
     st.caption(
         "סיכויי האליפות אינם רק עניין של חוזק — הם תלויים גם בהגרלה. כאן רואים "
         "אילו בתים מרכזים את רוב סיכויי האליפות, ואילו פייבוריטיות נמצאות באותה "
@@ -536,8 +557,8 @@ elif view == "קושי ההגרלה":
 
 
 # --- view: bonus questions --------------------------------------------------
-elif view == "שאלות בונוס":
-    st.header("שאלות בונוס — תשובות מהמודל")
+elif view == "bonus":
+    st.header(i18n.header("bonus", lang))
     st.caption(
         "כל התשובות מחושבות מאותו מנוע + סימולציית נוקאאוט, ולכן מתעדכנות ככל "
         "ש-Hermes כותב תוצאות אמת ל-matches.csv. שתי שאלות (מלך בישולים, "
@@ -606,8 +627,8 @@ elif view == "שאלות בונוס":
 
 
 # --- view: backtest / model reliability --------------------------------------
-elif view == "אמינות המודל":
-    st.header("אמינות המודל — בקטסט מונדיאל 2022")
+elif view == "reliability":
+    st.header(i18n.header("reliability", lang))
     st.caption(
         "אותו מנוע הסתברויות מורץ רטרוספקטיבית על 64 משחקי מונדיאל 2022 (תוצאות "
         "אמת + נקודות FIFA מאוקטובר 2022, מגרש ניטרלי). כך בודקים אם המודל מכויל: "
@@ -702,8 +723,8 @@ elif view == "אמינות המודל":
 
 
 # --- view: vs bookmakers -----------------------------------------------------
-elif view == "מול בוקמייקרים":
-    st.header("מול בוקמייקרים — עוגן שוק")
+elif view == "market":
+    st.header(i18n.header("market", lang))
     st.caption(
         "השוואת הסתברויות המודל מול הסתברויות השוק (יחסי הימור 1X2 לאחר הסרת "
         "מרווח הסוכן). יחס הימור עשרוני → הסתברות = 1/יחס, מנורמל לסכום 1. "
