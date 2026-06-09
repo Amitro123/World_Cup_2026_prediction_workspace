@@ -162,9 +162,9 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--match", required=True)
     b.set_defaults(func=cmd_briefing)
 
-    l = sub.add_parser("list", help="list adjustments")
-    l.add_argument("--match", default=None)
-    l.set_defaults(func=cmd_list)
+    lst = sub.add_parser("list", help="list adjustments")
+    lst.add_argument("--match", default=None)
+    lst.set_defaults(func=cmd_list)
 
     c = sub.add_parser("clear", help="deactivate an adjustment by id")
     c.add_argument("--id", required=True)

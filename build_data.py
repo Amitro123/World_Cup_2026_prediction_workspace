@@ -72,8 +72,13 @@ def build_fifa_ratings(teams: pd.DataFrame, model: dict) -> pd.DataFrame:
     if missing:
         raise ValueError(f"No FIFA points mapped for: {missing}")
     teams["fifa_points"] = teams.team_id.map(fifa).round(1)
-    lo, hi = teams.fifa_points.min(), teams.fifa_points.max()
-    teams["power_rating"] = ((teams.fifa_points - lo) / (hi - lo) * 100.0).round(2)
+    mu = teams.fifa_points.mean()
+    sigma = teams.fifa_points.std(ddof=1)
+    if sigma > 0:
+        z = (teams.fifa_points - mu) / sigma
+        teams["power_rating"] = ((z.clip(-3, 3) + 3) / 6 * 100.0).round(2)
+    else:
+        teams["power_rating"] = 50.0
     return teams
 
 

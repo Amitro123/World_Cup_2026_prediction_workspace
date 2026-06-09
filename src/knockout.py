@@ -29,11 +29,17 @@ consecutive fold.
 
 from __future__ import annotations
 
+import math
 import random
 
 import pandas as pd
 
 from . import engine
+
+# Partial home advantage for host nations in the knockout phase.
+# Full group-stage edge (HOME_SUP = 0.35 goals) is reduced by half in
+# high-stakes elimination games where both sides arrive at peak preparation.
+KNOCKOUT_HOST_ADV = engine.HOME_SUP * 0.5
 
 # --- Official FIFA 2026 Round of 32 (matches M73–M88) ---------------------
 # A slot is one of:
@@ -321,18 +327,22 @@ def simulate_once(ctx, rng, counts):
     winners = {}
     for m in range(73, 89):
         h, a = r32[m]
+        host_sup = KNOCKOUT_HOST_ADV if h in engine.HOSTS else 0.0
         w = h if engine.knockout_winner(
             ratings[h], ratings[a], rng,
-            h2h_sup=h2h.get((h, a), 0.0), form_sup=_form_sup(form, h, a),
+            h2h_sup=h2h.get((h, a), 0.0) + host_sup,
+            form_sup=_form_sup(form, h, a),
         ) == 0 else a
         winners[m] = w
         counts[w][WIN_COUNTER[m]] += 1
     for m in TREE_ORDER:  # ascending: every feeder is resolved before its match
         fa, fb = TREE[m]
         h, a = winners[fa], winners[fb]
+        host_sup = KNOCKOUT_HOST_ADV if h in engine.HOSTS else 0.0
         w = h if engine.knockout_winner(
             ratings[h], ratings[a], rng,
-            h2h_sup=h2h.get((h, a), 0.0), form_sup=_form_sup(form, h, a),
+            h2h_sup=h2h.get((h, a), 0.0) + host_sup,
+            form_sup=_form_sup(form, h, a),
         ) == 0 else a
         winners[m] = w
         counts[w][WIN_COUNTER[m]] += 1
@@ -402,8 +412,19 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
     }
 
 
+def _ci95_pct(count: int, n: int) -> float:
+    """95% half-width CI in percentage points for a proportion (normal approx)."""
+    p = count / n
+    return round(100.0 * 1.96 * math.sqrt(p * (1.0 - p) / n), 1)
+
+
 def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
-    """Run the Monte-Carlo and return a probability table sorted by title odds."""
+    """Run the Monte-Carlo and return a probability table sorted by title odds.
+
+    Columns include ``title_%`` (point estimate) and ``title_ci`` (±pp at 95%
+    confidence) so callers can display e.g. "12.4 ± 0.6" rather than implying
+    false precision between close candidates.
+    """
     rng = random.Random(seed)
     ctx = _prepare(ds)
     counts = {
@@ -426,6 +447,7 @@ def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
                 "sf_%": round(100 * c["sf"] / n, 1),
                 "final_%": round(100 * c["final"] / n, 1),
                 "title_%": round(100 * c["title"] / n, 1),
+                "title_ci": _ci95_pct(c["title"], n),
             }
         )
     return pd.DataFrame(rows).sort_values("title_%", ascending=False).reset_index(drop=True)

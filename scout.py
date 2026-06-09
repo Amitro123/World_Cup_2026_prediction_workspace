@@ -20,8 +20,8 @@ import argparse
 import json
 import re
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -380,7 +380,11 @@ def build_recommendations(all_injuries: list[dict], all_suspensions: list[dict])
         delta = SUSPENSION_IMPACT[get_tier(sus["player"])]
 
         card_emoji = {"red_card": "🟥", "yellow_accumulation": "🟨🟨", "suspension": "🚫"}.get(card_type, "🚫")
-        card_label = {"red_card": "כרטיס אדום", "yellow_accumulation": "צהובים מצטברים", "suspension": "השעיה"}.get(card_type, "השעיה")
+        card_label = {
+            "red_card": "כרטיס אדום",
+            "yellow_accumulation": "צהובים מצטברים",
+            "suspension": "השעיה",
+        }.get(card_type, "השעיה")
 
         recs.append({
             "match_relevant_team": sus["team_id"],
@@ -507,7 +511,7 @@ def format_for_human(result: dict, ds=None) -> str:
                 f"`rating_delta {sign}{delta}` ← {r['player']} ({r.get('card_type', r.get('severity', ''))})"
             )
         lines.append("")
-        lines.append(f"↩️ השב עם מספרי ההמלצות לאישור (למשל: `1 2`) או `דלג`")
+        lines.append("↩️ השב עם מספרי ההמלצות לאישור (למשל: `1 2`) או `דלג`")
     else:
         lines.append("📊 אין המלצות — המודל עובד על נתוני הבסיס")
 
@@ -518,7 +522,8 @@ if __name__ == "__main__":
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     args = parser.parse_args()
 
-    import os, sys
+    import os
+    import sys
     sys.path.insert(0, os.path.dirname(__file__))
     from src.models import DataStore
     ds = DataStore.load(os.path.join(os.path.dirname(__file__), "data"))

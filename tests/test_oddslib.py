@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src import oddslib  # noqa: E402
 
-
 # --- implied_1x2 -------------------------------------------------------------
 
 def test_implied_1x2_sums_to_one():

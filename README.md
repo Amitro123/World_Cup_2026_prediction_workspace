@@ -400,14 +400,15 @@ history** and **recent form**.
 2. **Pre-match goals:**
    ```
    sup    = (rating_home - rating_away) / K        (+ home advantage, + h2h, + form)
-   total  = BASE_TOTAL + |r_h + r_a - 2*FIFA_MEAN| / 4000
+   total  = BASE_TOTAL                             (flat; TOTAL_STRENGTH = 0.0)
    λ_home = max(MIN_LAMBDA, (total + sup) / 2)
    λ_away = max(MIN_LAMBDA, (total - sup) / 2)
    ```
    The 1X2 grid applies a **Dixon-Coles low-score correction** (`DC_RHO = -0.06`)
    so 0-0 / 1-0 / 0-1 / 1-1 are dependent rather than independent.
-3. **Expert blend:** λ is pulled toward the expert scoreline (`EXPERT_W = 0.55`
-   on the model, 0.45 on the expert).
+3. **Expert blend:** λ is pulled toward the expert scoreline (`EXPERT_W = 0.85`
+   on the model, 0.15 on the expert). 0.55 over-weighted the expert and pulled
+   the model away from the market; 0.85 best-matches bookmaker 1X2 calibration.
 4. **Head-to-head (`h2h.csv`):** a small bounded supremacy bump. Each past
    meeting is **weighted by stage** (`H2H_COMP_WEIGHTS`: friendly 0.40, group
    1.00, knockout 1.25, semifinal 1.40, final 1.50), **decays with age**
@@ -432,10 +433,14 @@ history** and **recent form**.
 - **Home advantage applies only to host nations.** 2026 is co-hosted by the
   **USA, Mexico and Canada** (`engine.HOSTS`), so every match is on neutral soil
   for the visiting team *except* when a host plays at home — there a real
-  home-crowd edge applies (`HOME_SUP`). A group game is therefore treated as
-  neutral unless its `home_id` is a host; all knockout games stay neutral. (You
-  can override per-team via an optional `host` column in `teams.csv`.)
-- No explicit red-card modeling.
+  home-crowd edge applies (`HOME_SUP`). Group games are treated as neutral unless
+  the `home_id` is a host; knockout games apply **half** the group-stage advantage
+  (`HOME_SUP × 0.5`) when a host nation plays at home. (Full home crowd effect is
+  smaller in high-stakes elimination games where both sides are at peak preparation.)
+- **Red-card modeling (in-play):** a team reduced to 10 men has its remaining-time
+  expected goals scaled by `RED_CARD_OWN = 0.74` (attack penalty) and the
+  opponent's by `RED_CARD_OPP = 1.40` (man-advantage bonus). Multiple cards compose
+  multiplicatively; the effect vanishes at full time.
 
 **Replacing the model:** swap the `ProbabilityModel` class in `src/engine.py` for
 any implementation exposing the same `pre_match` / `in_play` interface — every
@@ -652,13 +657,16 @@ m   = backtest.evaluate(backtest.load())   # Metrics(brier, log_loss, accuracy, 
 backtest.sweep(backtest.load(), "K", [180, 200, 220])   # tune a constant by measurement
 ```
 
-On the shipped 2022 data the model scores **Brier ≈ 0.587 / Log-loss ≈ 1.009**,
+On the shipped 2022 data the model scores **Brier ≈ 0.590 / Log-loss ≈ 1.004**,
 about **+12%** better than blind 1/3 guessing and **+8%** better than knowing
 only the base rate — i.e. it has genuine, measured skill, not just plausible
-output. The dashboard exposes all of this under the **"אמינות המודל"** (Model
-Reliability) view, including the calibration curve. (Whether the shipped
-`K = 240` is well-chosen is settled by cross-validation, not a single-tournament
-sweep — see *Fitting K / BASE_TOTAL* below.)
+output. These numbers are **computed at runtime** (never hard-keyed); the current
+figures across all five holdout tournaments live in **[BACKTEST.md](BACKTEST.md)**,
+regenerated with `python -m src.backtest --holdout`. The dashboard exposes all of
+this under the **"אמינות המודל"** (Model Reliability) view, including the
+calibration curve. (Whether the shipped `K = 240` is well-chosen is settled by
+cross-validation, not a single-tournament sweep — see *Fitting K / BASE_TOTAL*
+below.)
 
 ### FIFA vs Elo (CR recommendation, measured)
 
@@ -728,6 +736,16 @@ start date (`snapshot_before`), then recentres onto the FIFA-points scale (a pur
 shift — every rating gap, and thus every supremacy the engine computes, is
 preserved). This is reproducible, leakage-free (a tournament never sees its own
 results), and doubles as the Elo capability the review asked for.
+
+**Provable, not just claimed.** Each holdout's as-of date is recorded in
+`data/backtest_meta.json` and enforced by `src.backtest.leakage_check()`, which
+asserts `ratings_asof <= tournament_start` *and* that the manifest's start date
+matches the CSV's first match (so a stale entry can't pass). It runs in CI and on
+demand:
+
+```bash
+python -m src.backtest --leakage      # [OK], or exits non-zero listing violations
+```
 
 `fetch_holdout.py` assembles a ready-to-score `data/backtest_<name>.csv`
 (ratings + real results + as-of-start `form_sup`/`h2h_sup`) two ways:
@@ -899,6 +917,7 @@ Lightweight self-checking scripts live in `tests/` and can be run directly:
 ```bash
 python tests/test_h2h.py       # head-to-head signal + agent path
 python tests/test_form.py      # momentum / recent-form signal + agent path
+python tests/test_engine_invariants.py  # probability/λ/red-card/monotonicity invariants
 python tests/test_backtest.py  # backtest metrics, calibration, 2022 skill check
 python tests/test_holdout.py   # multi-tournament holdout + config comparison gate
 python tests/test_integrity.py # shootout cap + schema validation + data coverage
@@ -914,8 +933,25 @@ python tests/test_fetch_odds.py    # The Odds API 1X2 parser (no network)
 python tests/test_fetch_player_props.py # player-prop payload parser (no network)
 ```
 
-Each prints PASS/FAIL per check and asserts on failure (also runnable under
-`pytest` if installed).
+Each prints PASS/FAIL per check and asserts on failure. The whole suite also runs
+under `pytest` (`pytest tests/ -q` — currently **197 tests**) and is wired to
+**GitHub Actions** (`.github/workflows/ci.yml`): every push and PR to `main` runs
+the full suite on Python 3.10 / 3.11 / 3.12, plus a backtest smoke-check and the
+leakage guard.
+
+### Code quality (ruff + mypy)
+
+Config lives in `pyproject.toml`; CI enforces both on every push:
+
+```bash
+ruff check src/ *.py tests/      # lint + import-sort (E/F/W/I, line-length 120)
+mypy --strict src/engine.py      # the math core is fully typed, strict-clean
+```
+
+The engine's public outputs are **`TypedDict`s** (`MatchProbs`, `PreMatchResult`,
+`InPlayResult` in `src/engine.py`) so the dashboard, Excel mirror and knockout sim
+can't silently drift from the keys the engine actually returns. The rest of `src/`
+(pandas/streamlit-heavy) is lint-clean but not yet strict-typed.
 
 ---
 

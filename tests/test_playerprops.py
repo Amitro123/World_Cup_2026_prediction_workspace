@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src import playerprops as pp  # noqa: E402
 
-
 # --- p_at_least_one ----------------------------------------------------------
 
 def test_p_at_least_one_zero_rate():

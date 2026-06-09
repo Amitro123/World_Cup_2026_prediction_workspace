@@ -1,0 +1,50 @@
+[project]
+name = "worldcup2026"
+version = "0.1.0"
+description = "World Cup 2026 prediction workspace — Dixon-Coles Poisson on FIFA points, live probabilities, knockout Monte-Carlo."
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "streamlit>=1.30",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+# --- Ruff (lint + import sort) ----------------------------------------------
+[tool.ruff]
+# 120 matches the codebase's natural width (dense comments + tuple literals);
+# still catches genuinely runaway lines without reflowing the whole repo.
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import-sorting. High-signal without the churn of
+# a full UP/B sweep on a mature codebase.
+select = ["E", "F", "W", "I"]
+# E702 (multiple statements on one line via ';') is a deliberate compactness
+# choice in the perf-hot loops (knockout group sim, bonus goal sim) — kept.
+ignore = ["E702"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files end with a hand-rolled PASS/FAIL runner; allow its patterns.
+"tests/*" = ["E741"]
+
+# --- mypy (type checking) ----------------------------------------------------
+# The engine is the math core the dashboard and Excel mirror both depend on, so
+# it is held to --strict (run: `mypy src/engine.py`). It imports only the stdlib,
+# so the check is self-contained. The rest of src/ uses pandas/streamlit and is
+# not strict-clean yet; third-party stubs are ignored below.
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "streamlit.*", "altair.*", "openpyxl.*", "requests.*"]
+ignore_missing_imports = true

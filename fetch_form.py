@@ -102,7 +102,6 @@ def _parse_form(text: str, team_id: str, cutoff: int) -> list[dict]:
     Returns rows in the form.csv shape, newest first, capped at MAX_PER_TEAM.
     """
     names = "|".join(re.escape(n) for n in _names(team_id))
-    team_set = {n.lower() for n in _names(team_id)}
     # team listed first (gf-ga) or second (ga-gf, swapped to team POV)
     pat = re.compile(
         rf"(?P<left>{names})\s+(?P<g1>\d{{1,2}})\s*[-:–]\s*(?P<g2>\d{{1,2}})"
