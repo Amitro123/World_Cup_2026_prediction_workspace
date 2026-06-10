@@ -87,13 +87,15 @@ def build_fifa_ratings(teams: pd.DataFrame, model: dict) -> pd.DataFrame:
     if missing:
         raise ValueError(f"No FIFA points mapped for: {missing}")
     teams["fifa_points"] = teams.team_id.map(fifa).round(1)
-    mu = teams.fifa_points.mean()
-    sigma = teams.fifa_points.std(ddof=1)
-    if sigma > 0:
-        z = (teams.fifa_points - mu) / sigma
-        teams["power_rating"] = ((z.clip(-3, 3) + 3) / 6 * 100.0).round(2)
-    else:
-        teams["power_rating"] = 50.0
+    # power_rating is DISPLAY-ONLY (the engine consumes fifa_points directly).
+    # Canonical formula: 0-100 min-max rescale of fifa_points — the same one
+    # DataStore.set_team_rating re-derives on every rating write and that
+    # tests/test_fifa_snapshot.py pins. An earlier z-score-clip version here
+    # drifted from that (CR5 §power_rating); keep the two paths identical.
+    fp = teams.fifa_points.astype(float)
+    lo, hi = fp.min(), fp.max()
+    span = hi - lo if hi > lo else 1.0
+    teams["power_rating"] = ((fp - lo) / span * 100.0).round(2)
     return teams
 
 

@@ -104,3 +104,35 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}")
             traceback.print_exc()
     print(f"\n{passed}/{len(fns)} passed")
+
+
+def test_run_official_table_used_first(monkeypatch, tmp_path):
+    """use_official=True takes points from the API table, never scrapes."""
+    monkeypatch.setattr(
+        ffp, "fetch_official_table",
+        lambda probe_ahead=0: {"date_id": 15065,
+                               "points": {"MEX": 1690.0, "BRA": 1776.0}},
+    )
+    def _boom(t, retries=3):
+        raise AssertionError("scrape fallback must not run when API covers team")
+    monkeypatch.setattr(ffp, "fetch_team", _boom)
+    monkeypatch.setattr(ffp, "DATA", str(tmp_path))
+    ds = _FakeDS({"MEX": 1681.0, "BRA": 1776.0})
+    out = ffp.run(ds, ["MEX", "BRA"], write=False, use_official=True)
+    assert out["source"] == "inside.fifa.com api id15065"
+    assert out["n_proposals"] == 1
+    assert out["proposals"][0]["team"] == "MEX"
+
+
+def test_run_official_falls_back_to_scrape_when_api_down(monkeypatch, tmp_path):
+    monkeypatch.setattr(ffp, "fetch_official_table", lambda probe_ahead=0: None)
+    monkeypatch.setattr(
+        ffp, "fetch_team",
+        lambda t, retries=3: {"team": t, "ok": True, "points": 1690.0},
+    )
+    monkeypatch.setattr(ffp.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(ffp, "DATA", str(tmp_path))
+    ds = _FakeDS({"MEX": 1681.0})
+    out = ffp.run(ds, ["MEX"], write=False, use_official=True)
+    assert out["source"] == "duckduckgo"
+    assert out["n_proposals"] == 1

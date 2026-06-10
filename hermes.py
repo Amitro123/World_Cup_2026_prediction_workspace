@@ -142,7 +142,8 @@ def cmd_fifa(args) -> None:
 
     ds = DataStore.load(DATA)
     teams = [args.team] if args.team else list(ds.teams.team_id)
-    _print(fetch_fifa_points.run(ds, teams, args.write, args.min_delta))
+    _print(fetch_fifa_points.run(ds, teams, args.write, args.min_delta,
+                                 use_official=True))
 
 
 def build_parser() -> argparse.ArgumentParser:
