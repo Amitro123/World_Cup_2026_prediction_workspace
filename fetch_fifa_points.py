@@ -110,7 +110,12 @@ def fetch_official_table(probe_ahead: int = PROBE_AHEAD) -> dict | None:
         code, val = item.get("countryCode"), item.get("totalPoints")
         if code and val is not None:
             pts[code] = float(val)
-    return {"date_id": best_id, "points": pts} if pts else None
+    if not pts:
+        return None
+    # lastUpdateDate names the snapshot file written on --write (YYYYMMDD).
+    last_update = (best[0].get("lastUpdateDate") or "")[:10].replace("-", "")
+    return {"date_id": best_id, "points": pts, "rows": best,
+            "release": last_update or str(best_id)}
 
 # Plausible FIFA Men's ranking-points window. The real spread runs from ~1100
 # (lowest-ranked WC teams) to ~1900 (the very top). Bounding the parser to this
@@ -197,11 +202,18 @@ def run(ds, team_ids, write: bool, min_delta: float = DEFAULT_MIN_DELTA,
     official FIFA API in one shot; per-team scraping only covers teams the API
     response somehow lacks. The library default stays False so existing callers
     and the hermetic tests keep the pure-scrape behaviour.
+
+    Official-source writes keep the snapshot pin green (test_fifa_snapshot.py):
+    min_delta is ignored (it guards SCRAPE jitter; API values are exact, so all
+    changes >= 0.01 apply), exact unrounded values are written, and the raw API
+    response is saved to data/fifa_ranking_<release>.json — the test always
+    checks teams.csv against the newest snapshot file.
     """
     from src import datameta
 
     official = fetch_official_table() if use_official else None
     source = f"inside.fifa.com api id{official['date_id']}" if official else "duckduckgo"
+    eff_delta = 0.01 if official else min_delta
 
     proposals, results = [], []
     for t in team_ids:
@@ -213,9 +225,10 @@ def run(ds, team_ids, write: bool, min_delta: float = DEFAULT_MIN_DELTA,
         results.append(res)
         new = res["points"]
         old = float(ds.team_rating(t))
-        if new is not None and abs(new - old) >= min_delta:
+        if new is not None and abs(new - old) >= eff_delta:
             proposals.append({"team": t, "old": round(old, 1),
-                              "new": round(new, 1), "delta": round(new - old, 1)})
+                              "new": round(new, 1), "new_exact": float(new),
+                              "delta": round(new - old, 1)})
 
     out = {
         "source": source,
@@ -226,9 +239,14 @@ def run(ds, team_ids, write: bool, min_delta: float = DEFAULT_MIN_DELTA,
     }
     if write:
         for p in proposals:
-            ds.set_team_rating(p["team"], p["new"])
+            ds.set_team_rating(p["team"], p["new_exact"])
         out["written"] = len(proposals)
         out["written_to"] = os.path.join(DATA, "teams.csv")
+        if official and proposals and official.get("rows"):
+            snap = os.path.join(DATA, f"fifa_ranking_{official['release']}.json")
+            with open(snap, "w", encoding="utf-8") as f:
+                json.dump({"rankings": official["rows"]}, f, ensure_ascii=False)
+            out["snapshot"] = snap
         datameta.stamp(DATA, "fifa_points", source, len(proposals))
     return out
 

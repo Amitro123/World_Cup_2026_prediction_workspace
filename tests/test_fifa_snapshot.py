@@ -1,16 +1,19 @@
 """teams.csv base strength must match the bundled official FIFA ranking snapshot.
 
-data/fifa_ranking_20260401.json is the raw API response from
-  https://inside.fifa.com/api/ranking-overview?locale=en&dateId=id15065&rankingType=football
-— the FIFA/Coca-Cola Men's World Ranking released 1 April 2026, the last
-official release before the 2026 World Cup kicks off (next update 11 June 2026,
-after the group stage starts). An external review (CR4) flagged that
-fifa_points had no verifiable provenance; this test pins every team's rating
-to that official release so any silent drift fails CI.
+data/fifa_ranking_<YYYYMMDD>.json files are raw responses from the official
+FIFA ranking API (see fetch_fifa_points.OFFICIAL_API); the NEWEST one is the
+release teams.csv must match. An external review (CR4) flagged that fifa_points
+had no verifiable provenance; this test pins every team's rating to the
+official release so any silent drift fails CI.
+
+Refresh flow (e.g. when FIFA publishes a new release): `python hermes.py fifa
+--write` writes the exact official values AND saves the new snapshot JSON, so
+this test stays green — commit both files together.
 """
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
@@ -20,7 +23,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.models import DataStore  # noqa: E402
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-SNAPSHOT = os.path.join(DATA_DIR, "fifa_ranking_20260401.json")
+# Newest snapshot by date-in-filename (YYYYMMDD sorts lexicographically).
+SNAPSHOT = sorted(glob.glob(os.path.join(DATA_DIR, "fifa_ranking_*.json")))[-1]
 
 
 def _official_points() -> dict[str, float]:
