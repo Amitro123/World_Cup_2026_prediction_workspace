@@ -110,7 +110,8 @@ def _expected_ko_games(row) -> float:
 
 def compute(ds, n_ko: int = 4000, n_group: int = 3000, seed: int = 2026) -> dict:
     """Return a structured dict of bonus-question answers."""
-    name = lambda t: ds.team_name(t, "he")
+    def name(t):
+        return ds.team_name(t, "he")
     df = knockout.run(ds, n=n_ko, seed=seed).set_index("team_id")
     rng = random.Random(seed)
     gf, ga, ratings = _group_goal_sim(ds, n_group, rng)

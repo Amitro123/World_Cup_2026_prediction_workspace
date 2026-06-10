@@ -90,8 +90,8 @@ def test_write_players_market_appends(tmp_path):
 
 
 if __name__ == "__main__":
-    import traceback
     import inspect
+    import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = 0
     for fn in fns:

@@ -37,7 +37,32 @@ from __future__ import annotations
 
 import datetime as _dt
 import math
+import random
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any, TypedDict
+
+
+# --- Public output shapes (TypedDict so the dashboard / Excel mirror / knockout
+# sim can't silently drift from what the engine actually returns) ---------------
+class MatchProbs(TypedDict):
+    """The 1X2 probability vector — sums to 1.0."""
+    p_home: float
+    p_draw: float
+    p_away: float
+
+
+class PreMatchResult(MatchProbs):
+    """`pre_match` / `probs_from_lambdas` output: 1X2 plus the underlying λs."""
+    lambda_home: float
+    lambda_away: float
+
+
+class InPlayResult(PreMatchResult):
+    """`in_play` output: pre-match fields plus the live-state extras."""
+    remaining_fraction: float
+    red_mult_home: float
+    red_mult_away: float
 
 # --- Tunable model constants (FIFA-points Dixon-Coles) -----------------------
 K = 240.0            # FIFA points per 1 goal of supremacy (calibrated to the
@@ -51,8 +76,43 @@ TOTAL_STRENGTH = 0.0 # goals added to the total per FIFA point of combined-stren
                      # correlation between combined strength and total goals is ~0
                      # (-0.014), so the term pointed at a signal that isn't there.
                      # Flattened to 0.0 (constant BASE_TOTAL); re-enable to tune.
+                     # CR4 asked whether deep-knockout games (cagey, low-scoring)
+                     # mask a positive group-stage effect: tested by stage split —
+                     # group corr is -0.21 (n=48), knockout +0.03 (n=246), i.e.
+                     # the hypothesis is refuted, not just null. Stays 0.0.
 FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
-DC_RHO = -0.06       # Dixon-Coles low-score dependence
+
+# Rating-gap -> goal-supremacy mapping (CR §3A: the linear /K mapping is
+# "floor-bound on weak opponents" — a 1875-vs-1100 gap yields ~3.2 goals of
+# supremacy, pinning the minnow's lambda at MIN_LAMBDA so every minnow looks
+# identical). "logratio" uses SUP_ALPHA * ln(r_home / r_away), which compresses
+# the tails while matching the linear slope at the mean (SUP_ALPHA = FIFA_MEAN/K
+# makes the two modes locally identical at r_home≈r_away≈FIFA_MEAN, so switching
+# is a pure tail-compression change).
+#
+# VERDICT (measured 2026-06, fit on the 294-match holdout — see _rating_supremacy):
+# logratio at the fitted alpha≈7 lowers POOLED Brier 0.5769->0.5744 and trims the
+# favourites ~1pp (France/Spain title odds 16->15%), exactly as intended. BUT in
+# leave-one-tournament-out CV the out-of-sample gain collapses to -0.0002 log-loss
+# (it helps 4 tournaments, hurts Euro-2024), i.e. a wash — same call we made on
+# Elo. So the structural fix is implemented and validated, but the DEFAULT stays
+# "linear" because the data doesn't justify flipping it. Re-run the fit if more
+# holdout tournaments are added; flip only if the CV gain becomes robust.
+SUP_MODE = "linear"      # "linear" | "logratio"  (default linear — see verdict above)
+SUP_ALPHA = FIFA_MEAN / K  # 1500/240 = 6.25 (slope-match); fitted optimum ≈7.0
+
+# Dixon-Coles low-score dependence. Club-football fits put rho near -0.13
+# (Dixon & Coles 1997; dashee87.github.io / opisthokonta.net replications), but
+# those samples are league seasons. International tournament football has fewer
+# 0-0/1-0 grinds than club leagues (different incentives, no relegation chess),
+# so we deliberately run HALF the literature value rather than a fitted one —
+# rho is barely identifiable on our holdout: the pooled-294-match sweep
+# (backtest.sweep(df, "DC_RHO", [0, -.03, -.06, -.09, -.13])) gives Brier
+# 0.5765 / 0.5766 / 0.5769 / 0.5773 / 0.5781 — a 0.0016 spread, an order of
+# magnitude below the bootstrap SE (~0.03). -0.06 keeps the qualitative
+# draw-inflation correction at half the club value without measurable cost.
+# Re-fit only when more holdout tournaments are added.
+DC_RHO = -0.06       # Dixon-Coles low-score dependence (see note above)
 HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
 EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
                      # over-weighted the expert and pulled the model away from
@@ -64,7 +124,15 @@ EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
 # there a real crowd advantage applies. Group games are therefore treated as
 # neutral unless the home_id is one of these three; knockout games stay neutral.
 HOSTS = frozenset({"USA", "MEX", "CAN"})
-MIN_LAMBDA = 0.18    # floor on any expected-goals value
+# Floor on any expected-goals value. In extreme 2026 mismatches the raw formula
+# goes below it (Spain~1876 vs Curacao~1295: sup=2.42 -> lam_away=0.09) and the
+# floor binds, so the minnow keeps a realistic ~1-in-5 chance of a goal per
+# match — WC history says even hopeless underdogs average ~0.2+ goals/game vs
+# top sides, not 0.09. The 294-match holdout cannot arbitrate (no pairing there
+# is lopsided enough for the floor to bind: Brier identical for 0.05..0.25), so
+# 0.18 is an empirical-prior guard, not a fitted value. CR4 suggested trying
+# 0.10; tested — no measurable holdout effect, kept at 0.18.
+MIN_LAMBDA = 0.18
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
 # --- Optional Elo blend ------------------------------------------------------
@@ -152,7 +220,7 @@ H2H_COMP_WEIGHTS = {
 H2H_FRIENDLY_W = H2H_COMP_WEIGHTS["friendly"]  # kept for back-compat / readability
 
 
-def _comp_weight(comp) -> float:
+def _comp_weight(comp: object) -> float:
     """Map a meeting's `comp`/stage label to its head-to-head weight.
 
     Accepts both the canonical keys above and free-text values (e.g. from the
@@ -217,7 +285,7 @@ def _dc_tau(i: int, j: int, lam_home: float, lam_away: float) -> float:
     return 1.0
 
 
-def h2h_supremacy(meetings, ref_year: int | None = None) -> float:
+def h2h_supremacy(meetings: Iterable[Mapping[str, Any]], ref_year: int | None = None) -> float:
     """Weighted head-to-head supremacy (goals), from the HOME team's perspective.
 
     meetings: iterable of dicts, each oriented to the home team:
@@ -278,7 +346,7 @@ FORM_COMP_WEIGHTS = {
 }
 
 
-def _form_comp_weight(comp) -> float:
+def _form_comp_weight(comp: object) -> float:
     """Map a match's `comp`/stage label to its momentum weight (see _comp_weight)."""
     c = str(comp or "").strip().lower()
     if not c:
@@ -301,7 +369,7 @@ def _form_comp_weight(comp) -> float:
     return FORM_COMP_WEIGHTS["competitive"]
 
 
-def _parse_date(value):
+def _parse_date(value: object) -> _dt.date | None:
     """Best-effort parse of a YYYY-MM-DD (or YYYY) date string to a date."""
     if value is None:
         return None
@@ -316,7 +384,7 @@ def _parse_date(value):
     return None
 
 
-def form_score(matches, ref_date=None) -> float:
+def form_score(matches: Iterable[Mapping[str, Any]], ref_date: object = None) -> float:
     """A team's recent-form (momentum) scalar, from its OWN perspective.
 
     matches: iterable of dicts describing the team's recent games, each oriented
@@ -362,6 +430,19 @@ def form_supremacy(form_home: float, form_away: float) -> float:
     return max(-FORM_CAP, min(FORM_CAP, bump))
 
 
+def _rating_supremacy(rating_home: float, rating_away: float) -> float:
+    """Convert a rating gap to goal supremacy under the active SUP_MODE.
+
+    "linear" (default): (r_home - r_away) / K — the original mapping.
+    "logratio": SUP_ALPHA * ln(r_home / r_away) — compresses blowout gaps so a
+    minnow's lambda is no longer pinned at the floor. Falls back to linear if a
+    rating is non-positive (a placeholder team) so ln() never blows up.
+    """
+    if SUP_MODE == "logratio" and rating_home > 0 and rating_away > 0:
+        return SUP_ALPHA * math.log(rating_home / rating_away)
+    return (rating_home - rating_away) / K
+
+
 def expected_goals(
     rating_home: float,
     rating_away: float,
@@ -380,7 +461,7 @@ def expected_goals(
     form_sup: extra supremacy (goals) from recent momentum; see `form_supremacy`.
         The hotter team coming into the tournament gets a small nudge.
     """
-    sup = (rating_home - rating_away) / K
+    sup = _rating_supremacy(rating_home, rating_away)
     if not neutral:
         sup += HOME_SUP
     sup += h2h_sup
@@ -435,12 +516,16 @@ def _grid_probs(
 
 def probs_from_lambdas(
     lam_home: float, lam_away: float, dixon_coles: bool = True
-) -> dict[str, float]:
+) -> PreMatchResult:
     """Public helper: win/draw/loss directly from a pair of expected-goals."""
     out = _grid_probs(lam_home, lam_away, dixon_coles=dixon_coles)
-    out["lambda_home"] = lam_home
-    out["lambda_away"] = lam_away
-    return out
+    return {
+        "p_home": out["p_home"],
+        "p_draw": out["p_draw"],
+        "p_away": out["p_away"],
+        "lambda_home": lam_home,
+        "lambda_away": lam_away,
+    }
 
 
 @dataclass
@@ -459,15 +544,19 @@ class ProbabilityModel:
         expert: tuple[float, float] | None = None,
         h2h_sup: float = 0.0,
         form_sup: float = 0.0,
-    ) -> dict[str, float]:
+    ) -> PreMatchResult:
         lam_h, lam_a = expected_goals(
             rating_home, rating_away, neutral=neutral, expert=expert,
             h2h_sup=h2h_sup, form_sup=form_sup,
         )
         out = _grid_probs(lam_h, lam_a, dixon_coles=True)
-        out["lambda_home"] = lam_h
-        out["lambda_away"] = lam_a
-        return out
+        return {
+            "p_home": out["p_home"],
+            "p_draw": out["p_draw"],
+            "p_away": out["p_away"],
+            "lambda_home": lam_h,
+            "lambda_away": lam_a,
+        }
 
     def in_play(
         self,
@@ -482,7 +571,7 @@ class ProbabilityModel:
         form_sup: float = 0.0,
         red_home: int = 0,
         red_away: int = 0,
-    ) -> dict[str, float]:
+    ) -> InPlayResult:
         lam_h, lam_a = expected_goals(
             rating_home, rating_away, neutral=neutral, expert=expert,
             h2h_sup=h2h_sup, form_sup=form_sup,
@@ -496,12 +585,16 @@ class ProbabilityModel:
             base_away=away_goals,
             dixon_coles=False,
         )
-        out["lambda_home"] = lam_h
-        out["lambda_away"] = lam_a
-        out["remaining_fraction"] = remaining
-        out["red_mult_home"] = red_h
-        out["red_mult_away"] = red_a
-        return out
+        return {
+            "p_home": out["p_home"],
+            "p_draw": out["p_draw"],
+            "p_away": out["p_away"],
+            "lambda_home": lam_h,
+            "lambda_away": lam_a,
+            "remaining_fraction": remaining,
+            "red_mult_home": red_h,
+            "red_mult_away": red_a,
+        }
 
 
 # --- My-prediction evaluation ------------------------------------------------
@@ -543,7 +636,7 @@ def red_card_multipliers(red_home: int = 0, red_away: int = 0) -> tuple[float, f
     return mh, ma
 
 
-def sample_poisson(lam: float, rng) -> int:
+def sample_poisson(lam: float, rng: random.Random) -> int:
     """Knuth's algorithm — Poisson sample without numpy."""
     if lam <= 0:
         return 0
@@ -559,7 +652,7 @@ def sample_poisson(lam: float, rng) -> int:
 def sample_score(
     rating_home: float,
     rating_away: float,
-    rng,
+    rng: random.Random,
     neutral: bool = False,
     expert: tuple[float, float] | None = None,
     h2h_sup: float = 0.0,
@@ -573,9 +666,9 @@ def sample_score(
 
 
 def resolve_knockout(
-    rating_home: float, rating_away: float, rng, neutral: bool = True,
+    rating_home: float, rating_away: float, rng: random.Random, neutral: bool = True,
     h2h_sup: float = 0.0, form_sup: float = 0.0,
-) -> tuple[int, dict]:
+) -> tuple[int, dict[str, Any]]:
     """Play a knockout tie to a single winner via regulation -> ET -> penalties.
 
     Returns ``(winner_idx, info)`` where ``winner_idx`` is 0 (home) or 1 (away)
@@ -613,7 +706,7 @@ def resolve_knockout(
 
 
 def knockout_winner(
-    rating_home: float, rating_away: float, rng, neutral: bool = True,
+    rating_home: float, rating_away: float, rng: random.Random, neutral: bool = True,
     h2h_sup: float = 0.0, form_sup: float = 0.0,
 ) -> int:
     """Return 0 if home advances, 1 if away (regulation -> ET -> penalties).

@@ -26,6 +26,11 @@ The whole 2022 tournament was at neutral venues (Qatar), so rows are neutral=1;
 this isolates pure strength prediction with no home-advantage confound. Knockout
 games decided on penalties are recorded as their 90'/120' draw (the model
 predicts regulation outcome, not the shootout).
+
+Leakage guard: each holdout's rating as-of date is recorded in
+data/backtest_meta.json and enforced by `leakage_check()` (ratings_asof must be
+<= tournament_start). Run `python -m src.backtest --leakage` to verify; it is
+also embedded in the `--holdout` report and wired into CI.
 """
 
 from __future__ import annotations
@@ -46,7 +51,8 @@ DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "backtest_20
 # EXPERT_W is tunable too, but only bites on rows that carry expert columns
 # (exp_home/exp_away); our historical holdouts don't, so fitting it needs new
 # data — see `fit_report`'s note.
-_TUNABLE = ("K", "BASE_TOTAL", "HOME_SUP", "DC_RHO", "FIFA_MEAN", "EXPERT_W")
+_TUNABLE = ("K", "BASE_TOTAL", "HOME_SUP", "DC_RHO", "FIFA_MEAN", "EXPERT_W",
+            "SUP_MODE", "SUP_ALPHA")
 
 
 @dataclass
@@ -493,7 +499,7 @@ def cv_fit(
     fit_sum = def_sum = 0.0
     total_n = 0
     for held in labels:
-        train = pd.concat([frames[l] for l in labels if l != held], ignore_index=True)
+        train = pd.concat([frames[lab] for lab in labels if lab != held], ignore_index=True)
         test = frames[held]
         fitted = grid_fit(train, grid, metric)["best_params"]
         f_s, f_n = _metric_sum(test, fitted, metric)
@@ -534,7 +540,7 @@ def fit_report(
     honestly requires expert columns on the backtest data, which we do not have.
     """
     sources = sources or _discover_sources()
-    frames = {l: pd.read_csv(p) for l, p in sources.items() if os.path.exists(p)}
+    frames = {lab: pd.read_csv(p) for lab, p in sources.items() if os.path.exists(p)}
     if not frames:
         return {"error": "no holdout CSVs found", "looked_for": sources}
     grid = grid or DEFAULT_GRID
@@ -670,7 +676,12 @@ def holdout(sources: dict[str, str] | None = None) -> dict:
     pooled = _block(pooled_df)
     pooled["calibration"] = calibration_table(pooled_df)
     pooled["skill_ci"] = skill_ci(pooled_df)
-    return {"tournaments": per, "pooled": pooled}
+    return {
+        "tournaments": per,
+        "pooled": pooled,
+        "leakage": leakage_check({k: v for k, v in (sources or _discover_sources()).items()
+                                  if k in frames}),
+    }
 
 
 def _discover_sources() -> dict[str, str]:
@@ -682,6 +693,85 @@ def _discover_sources() -> dict[str, str]:
         label = os.path.basename(path)[len("backtest_"):-len(".csv")]
         out[label] = path
     return out
+
+
+# --- Leakage guard -----------------------------------------------------------
+# A holdout is only honest if the ratings/signals in its CSV were knowable BEFORE
+# the tournament started. We record that promise in data/backtest_meta.json
+# (ratings_asof per tournament) and verify it here, so "no leakage" is a checked
+# fact rather than a claim in a comment. The check is wired into the holdout
+# report and asserted by tests/test_leakage.py.
+_META_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "backtest_meta.json")
+
+
+def _load_meta(path: str | None = None) -> dict:
+    """Read the leakage ledger ({} if absent/unreadable). `_README` is ignored."""
+    import json
+    p = path or _META_FILE
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            meta = json.load(f) or {}
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in meta.items() if not k.startswith("_")}
+
+
+def leakage_check(
+    sources: dict[str, str] | None = None, meta_path: str | None = None
+) -> dict:
+    """Verify every holdout CSV is provably leakage-free.
+
+    For each tournament we assert:
+      1. a manifest entry exists in data/backtest_meta.json;
+      2. ``ratings_asof <= tournament_start`` (ratings predate the tournament);
+      3. ``tournament_start`` equals the first match date in the CSV (so a stale
+         or copy-pasted manifest entry can't silently pass).
+
+    Returns ``{"ok": bool, "tournaments": {label: {...}}, "violations": [str]}``.
+    Pure string date comparison (ISO YYYY-MM-DD sorts correctly), so no datetime
+    parsing is needed.
+    """
+    sources = sources or _discover_sources()
+    meta = _load_meta(meta_path)
+    per: dict[str, dict] = {}
+    violations: list[str] = []
+
+    for label, path in sorted(sources.items()):
+        if not os.path.exists(path):
+            continue
+        data_start = str(pd.read_csv(path, usecols=["date"])["date"].min())
+        entry = meta.get(label)
+        if entry is None:
+            violations.append(f"{label}: no entry in backtest_meta.json (cannot prove as-of)")
+            per[label] = {"ok": False, "data_start": data_start, "reason": "missing manifest entry"}
+            continue
+
+        asof = str(entry.get("ratings_asof", ""))
+        tstart = str(entry.get("tournament_start", ""))
+        problems = []
+        if not asof:
+            problems.append("ratings_asof missing")
+        if not tstart:
+            problems.append("tournament_start missing")
+        if asof and tstart and asof > tstart:
+            problems.append(f"LEAKAGE: ratings_asof {asof} is AFTER tournament_start {tstart}")
+        if tstart and tstart != data_start:
+            problems.append(
+                f"manifest tournament_start {tstart} != first match in CSV {data_start}")
+
+        ok = not problems
+        per[label] = {
+            "ok": ok,
+            "ratings_asof": asof,
+            "tournament_start": tstart,
+            "data_start": data_start,
+        }
+        for p in problems:
+            violations.append(f"{label}: {p}")
+
+    return {"ok": not violations, "tournaments": per, "violations": violations}
 
 
 def load(csv_path: str | None = None) -> pd.DataFrame:
@@ -762,6 +852,15 @@ def _print_holdout(rep: dict) -> None:
         print(f"\n[holdout] {rep['error']}: {rep.get('looked_for')}\n")
         return
     print("\n=== Multi-tournament holdout ===")
+    lk = rep.get("leakage")
+    if lk:
+        if lk["ok"]:
+            print("  leakage check: [OK] all ratings_asof <= tournament_start "
+                  "(see data/backtest_meta.json)")
+        else:
+            print("  leakage check: [FAIL] VIOLATIONS:")
+            for v in lk["violations"]:
+                print(f"    - {v}")
     for label, blk in rep["tournaments"].items():
         m = blk["model"]
         print(f"\n--- {label}  ({blk['n']} matches) ---")
@@ -841,8 +940,27 @@ def main(argv=None) -> None:
     ap.add_argument("--fit", action="store_true",
                     help="cross-validated fit of K/BASE_TOTAL across all "
                     "data/backtest_*.csv (minimise log-loss)")
+    ap.add_argument("--leakage", action="store_true",
+                    help="verify every holdout CSV is leakage-free "
+                    "(ratings_asof <= tournament_start) and exit non-zero if not")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a report")
     args = ap.parse_args(argv)
+
+    if args.leakage:
+        import sys
+        lk = leakage_check()
+        if args.json:
+            print(json.dumps(lk, ensure_ascii=False, indent=2))
+        elif lk["ok"]:
+            print("leakage check: [OK] all ratings_asof <= tournament_start")
+            for label, t in lk["tournaments"].items():
+                print(f"  {label:10} ratings_asof {t['ratings_asof']} "
+                      f"<= start {t['tournament_start']}")
+        else:
+            print("leakage check: [FAIL] VIOLATIONS:")
+            for v in lk["violations"]:
+                print(f"  - {v}")
+        sys.exit(0 if lk["ok"] else 1)
 
     if args.fit:
         rep = fit_report()

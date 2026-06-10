@@ -1,3 +1,6 @@
-pandas>=2.0
-streamlit>=1.30
-openpyxl>=3.1
+# Pinned to the versions the workspace was built and validated against
+# (CR4 P0-3: unpinned streamlit/pandas API drift silently breaks the app).
+# Compatible-release pins (~=) allow patch updates, block breaking minors.
+pandas~=2.2.2
+streamlit~=1.37.1
+openpyxl~=3.1.5

@@ -1,0 +1,28 @@
+{
+  "_README": "Leakage ledger for the holdout backtests. For each tournament, ratings_asof is the cutoff date through which result data was allowed to inform the ratings/signals in data/backtest_<label>.csv. A backtest is leakage-free ONLY if ratings_asof <= tournament_start; src.backtest.leakage_check() enforces this and also asserts tournament_start matches the first match date in the CSV, so a wrong/stale manifest is caught. Dates are YYYY-MM-DD.",
+  "2022": {
+    "tournament_start": "2022-11-20",
+    "ratings_asof": "2022-10-06",
+    "ratings": "Official FIFA ranking points — last release before the tournament (2022-10-06). Elo columns derived from results before kickoff."
+  },
+  "euro2020": {
+    "tournament_start": "2021-06-11",
+    "ratings_asof": "2021-06-10",
+    "ratings": "Derived World Football Elo from results strictly before kickoff (src/elo.snapshot_before); form/h2h signals computed as-of the start date."
+  },
+  "euro2024": {
+    "tournament_start": "2024-06-14",
+    "ratings_asof": "2024-06-13",
+    "ratings": "Derived World Football Elo from results strictly before kickoff (src/elo.snapshot_before); form/h2h signals computed as-of the start date."
+  },
+  "wc2014": {
+    "tournament_start": "2014-06-12",
+    "ratings_asof": "2014-06-11",
+    "ratings": "Derived World Football Elo from results strictly before kickoff (src/elo.snapshot_before); form/h2h signals computed as-of the start date."
+  },
+  "wc2018": {
+    "tournament_start": "2018-06-14",
+    "ratings_asof": "2018-06-13",
+    "ratings": "Derived World Football Elo from results strictly before kickoff (src/elo.snapshot_before); form/h2h signals computed as-of the start date."
+  }
+}

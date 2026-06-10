@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src import elo  # noqa: E402
 
-
 # --- expected score ----------------------------------------------------------
 
 def test_equal_ratings_neutral_is_coin_flip():

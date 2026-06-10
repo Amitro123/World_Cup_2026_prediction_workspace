@@ -447,7 +447,12 @@ elif view == "knockout":
 
     if "ko_df" in st.session_state:
         df = st.session_state["ko_df"]
-        show = df.rename(
+        # Build a display-friendly title column: "12.4 ± 0.6"
+        df_show = df.copy()
+        df_show["אליפות %"] = df_show.apply(
+            lambda r: f"{r['title_%']} ± {r['title_ci']}", axis=1
+        )
+        show = df_show.rename(
             columns={
                 "name_he": "נבחרת",
                 "group": "בית",
@@ -456,10 +461,10 @@ elif view == "knockout":
                 "qf_%": "רבע %",
                 "sf_%": "חצי %",
                 "final_%": "גמר %",
-                "title_%": "אליפות %",
             }
         )[["נבחרת", "בית", "העפלה %", "1/8 %", "רבע %", "חצי %", "גמר %", "אליפות %"]]
         st.dataframe(show, use_container_width=True, hide_index=True, height=560)
+        st.caption("אליפות % = הסתברות ± רווח סמך 95% (נ.ס.)")
         st.subheader("מועמדות לאליפות (10 המובילות)")
         top = df.head(10).set_index("name_he")["title_%"]
         st.bar_chart(pd.DataFrame({"אליפות %": top}))
@@ -623,7 +628,8 @@ elif view == "bonus":
         st.markdown(f"**מלך הבישולים: {b['top_assists']['answer']}** ⚠️ — {b['top_assists']['note']}")
         if b["top_assists"].get("table"):
             st.dataframe(pd.DataFrame(b["top_assists"]["table"]), use_container_width=True, hide_index=True)
-        st.markdown(f"**אמבפה vs ויניסיוס → {b['mbappe_vs_vinicius']['answer']}** ⚠️ — {b['mbappe_vs_vinicius']['note']}")
+        mbv = b["mbappe_vs_vinicius"]
+        st.markdown(f"**אמבפה vs ויניסיוס → {mbv['answer']}** ⚠️ — {mbv['note']}")
 
 
 # --- view: backtest / model reliability --------------------------------------
