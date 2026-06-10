@@ -76,6 +76,10 @@ TOTAL_STRENGTH = 0.0 # goals added to the total per FIFA point of combined-stren
                      # correlation between combined strength and total goals is ~0
                      # (-0.014), so the term pointed at a signal that isn't there.
                      # Flattened to 0.0 (constant BASE_TOTAL); re-enable to tune.
+                     # CR4 asked whether deep-knockout games (cagey, low-scoring)
+                     # mask a positive group-stage effect: tested by stage split —
+                     # group corr is -0.21 (n=48), knockout +0.03 (n=246), i.e.
+                     # the hypothesis is refuted, not just null. Stays 0.0.
 FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
 
 # Rating-gap -> goal-supremacy mapping (CR §3A: the linear /K mapping is
@@ -97,7 +101,18 @@ FIFA_MEAN = 1500.0   # reference FIFA rating (strength scaling anchor)
 SUP_MODE = "linear"      # "linear" | "logratio"  (default linear — see verdict above)
 SUP_ALPHA = FIFA_MEAN / K  # 1500/240 = 6.25 (slope-match); fitted optimum ≈7.0
 
-DC_RHO = -0.06       # Dixon-Coles low-score dependence
+# Dixon-Coles low-score dependence. Club-football fits put rho near -0.13
+# (Dixon & Coles 1997; dashee87.github.io / opisthokonta.net replications), but
+# those samples are league seasons. International tournament football has fewer
+# 0-0/1-0 grinds than club leagues (different incentives, no relegation chess),
+# so we deliberately run HALF the literature value rather than a fitted one —
+# rho is barely identifiable on our holdout: the pooled-294-match sweep
+# (backtest.sweep(df, "DC_RHO", [0, -.03, -.06, -.09, -.13])) gives Brier
+# 0.5765 / 0.5766 / 0.5769 / 0.5773 / 0.5781 — a 0.0016 spread, an order of
+# magnitude below the bootstrap SE (~0.03). -0.06 keeps the qualitative
+# draw-inflation correction at half the club value without measurable cost.
+# Re-fit only when more holdout tournaments are added.
+DC_RHO = -0.06       # Dixon-Coles low-score dependence (see note above)
 HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
 EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
                      # over-weighted the expert and pulled the model away from
@@ -109,7 +124,15 @@ EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
 # there a real crowd advantage applies. Group games are therefore treated as
 # neutral unless the home_id is one of these three; knockout games stay neutral.
 HOSTS = frozenset({"USA", "MEX", "CAN"})
-MIN_LAMBDA = 0.18    # floor on any expected-goals value
+# Floor on any expected-goals value. In extreme 2026 mismatches the raw formula
+# goes below it (Spain~1876 vs Curacao~1295: sup=2.42 -> lam_away=0.09) and the
+# floor binds, so the minnow keeps a realistic ~1-in-5 chance of a goal per
+# match — WC history says even hopeless underdogs average ~0.2+ goals/game vs
+# top sides, not 0.09. The 294-match holdout cannot arbitrate (no pairing there
+# is lopsided enough for the floor to bind: Brier identical for 0.05..0.25), so
+# 0.18 is an empirical-prior guard, not a fitted value. CR4 suggested trying
+# 0.10; tested — no measurable holdout effect, kept at 0.18.
+MIN_LAMBDA = 0.18
 MAX_GOALS = 8        # truncation for the Poisson scoreline grid
 
 # --- Optional Elo blend ------------------------------------------------------

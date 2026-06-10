@@ -138,8 +138,9 @@ is the next localization phase. The views are:
 - **סקירת טורניר (Tournament Overview)** — expected points, status breakdown, and
   a Monte-Carlo of your remaining predictions.
 - **סימולציית נוקאאוט (Knockout Simulation)** — runs the whole tournament
-  thousands of times and shows each team's qualify / R16 / QF / SF / final /
-  title odds.
+  `N_SIMS = 2000` times by default (seeded, reproducible; every figure carries a
+  ±pp 95% CI column) and shows each team's qualify / R16 / QF / SF / final /
+  title odds. For publication-grade long-tail title odds raise n to ≥100k.
 - **בראקט מסומלץ (Simulated Bracket)** — one full random run of the bracket.
 - **קושי ההגרלה (Draw Difficulty)** — group-by-group title equity plus the
   deterministic "chalk" bracket geometry: which half/quarter each group winner
@@ -567,7 +568,11 @@ Both paths report `source` in their JSON output so you know which was used.
 
 ## Knockout Simulation
 
-`src/knockout.py` runs a Monte-Carlo of the entire tournament:
+`src/knockout.py` runs a Monte-Carlo of the entire tournament. Defaults are
+pinned (`N_SIMS = 2000`, `DEFAULT_SEED = 2026`) so quoted numbers are
+reproducible, and `run()` reports a `title_ci` (±pp, 95%) column alongside every
+estimate; at n=2000 a ~12% favourite reads ±1.4pp. Use `n >= 100_000` when you
+need stable long-tail (sub-1%) title odds:
 
 1. **Group stage** — each game with `status=finished` in `matches.csv` is locked
    to its real result; the rest is sampled from the model. A group game is played

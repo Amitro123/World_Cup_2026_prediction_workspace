@@ -41,6 +41,17 @@ from . import engine
 # high-stakes elimination games where both sides arrive at peak preparation.
 KNOCKOUT_HOST_ADV = engine.HOME_SUP * 0.5
 
+# --- Monte-Carlo defaults (CR4 P1-8) -----------------------------------------
+# N_SIMS is the pinned default sample size; DEFAULT_SEED makes any headline
+# number quoted from the dashboard/README reproducible. Sample-size sensitivity:
+# every run() row carries a `title_ci` column (±pp, 95%) so the noise is shown,
+# not hidden. At n=2000 a 12% title favourite reads ±1.4pp and long-tail teams
+# (<0.5%) read ±0.3pp — fine for the interactive UI. For publication-grade
+# long-tail odds (48-team title table) use n>=100_000, where the favourite
+# tightens to ±0.2pp; run() is O(n) and ~100k sims take a few minutes.
+N_SIMS = 2000
+DEFAULT_SEED = 2026
+
 # --- Official FIFA 2026 Round of 32 (matches M73–M88) ---------------------
 # A slot is one of:
 #   ("W", group)  group winner
@@ -418,7 +429,7 @@ def _ci95_pct(count: int, n: int) -> float:
     return round(100.0 * 1.96 * math.sqrt(p * (1.0 - p) / n), 1)
 
 
-def run(ds, n: int = 2000, seed: int | None = None) -> pd.DataFrame:
+def run(ds, n: int = N_SIMS, seed: int | None = DEFAULT_SEED) -> pd.DataFrame:
     """Run the Monte-Carlo and return a probability table sorted by title odds.
 
     Columns include ``title_%`` (point estimate) and ``title_ci`` (±pp at 95%

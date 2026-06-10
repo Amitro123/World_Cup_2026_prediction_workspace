@@ -20,6 +20,15 @@ Why FIFA points (not group-winner odds): group-winner odds conflate team
 strength with how easy the group is. Brazil's short group-winner odds (easy
 group) inflated its rating; on neutral FIFA strength it sits ~6th, while Spain
 stays top-2 — matching the research docs.
+
+FIFA points provenance (CR4 P0-1): the authoritative source for fifa_points is
+FIFA_RANKING_URL below — the official FIFA/Coca-Cola Men's Ranking release of
+1 April 2026, the last before the tournament (next release 11 June 2026). The
+raw API response is committed as data/fifa_ranking_20260401.json and
+tests/test_fifa_snapshot.py pins teams.csv to it, so a stale or hand-edited
+rating fails CI. Day-to-day refreshes go through fetch_fifa_points.py /
+`hermes.py fifa`; the cowork_model.json path in step 1 is the historical
+bootstrap, superseded by the official snapshot.
 """
 
 import json
@@ -30,6 +39,12 @@ import pandas as pd
 from src import engine
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
+
+# Official FIFA ranking release backing teams.csv fifa_points (see docstring).
+# dateId=id15065 == the 2026-04-01 release; bump it (and the snapshot file +
+# test_fifa_snapshot.py) when FIFA publishes a newer pre-tournament release.
+FIFA_RANKING_URL = ("https://inside.fifa.com/api/ranking-overview"
+                    "?locale=en&dateId=id15065&rankingType=football")
 
 # Cowork FIFA-key (English) -> this workspace's name_en, where they differ.
 NAME_FIXES = {

@@ -3,10 +3,11 @@ name = "worldcup2026"
 version = "0.1.0"
 description = "World Cup 2026 prediction workspace — Dixon-Coles Poisson on FIFA points, live probabilities, knockout Monte-Carlo."
 requires-python = ">=3.10"
+license = { text = "MIT" }
 dependencies = [
-    "pandas>=2.0",
-    "streamlit>=1.30",
-    "openpyxl>=3.1",
+    "pandas~=2.2.2",
+    "streamlit~=1.37.1",
+    "openpyxl~=3.1.5",
 ]
 
 [project.optional-dependencies]
