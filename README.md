@@ -47,6 +47,7 @@ WorldCup2026/
 ├── data/                     # all inputs + derived data (CSV + JSON)
 │   ├── groups.csv            # the 12 groups
 │   ├── teams.csv             # 48 teams + FIFA points + 0–100 power rating
+│   ├── fifa_ranking_20260401.json # official FIFA API snapshot backing fifa_points (CI-pinned)
 │   ├── matches.csv           # 72 group fixtures + research scoreline + live state
 │   ├── model_probs.csv       # pre-match 1X2 probabilities (model-derived)
 │   ├── expert_scores.csv     # expert scoreline per match (blended into the model)
@@ -279,6 +280,13 @@ ships dormant; the model props in `src/playerprops.py` display with or without i
 |--------|------|-------------|
 | `match_id` | str | Match key |
 | `expert_home` / `expert_away` | int | Expert scoreline (blended into the model) |
+
+> **Validation limitation:** none of the historical holdouts
+> (`data/backtest_*.csv`) carry expert scorelines, so `EXPERT_W` cannot be fit
+> or validated from the shipped backtests — the expert blend's contribution is
+> a prior, not a measured edge. To validate it yourself, add
+> `expert_home`/`expert_away` columns to a holdout CSV and sweep `EXPERT_W`
+> via `backtest.sweep(df, "EXPERT_W", [...])`.
 
 ### `my_predictions.csv`
 | Column | Type | Description |

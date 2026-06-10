@@ -7,9 +7,11 @@ World Ranking points in teams.csv that every prediction is built on. Until now
 those points were static (copied once from the prior Cowork session), which an
 external review flagged: the other signals had fetchers, this one did not.
 
-It searches DuckDuckGo lite for each team's current FIFA ranking points, extracts
-the most plausible points value (a number in the real FIFA range, nearest a
-"points"/"FIFA"/"ranking" cue), and proposes an updated value per team.
+Primary source (CR5): the official FIFA ranking API (one JSON request for the
+full table — see OFFICIAL_API below). Fallback: a DuckDuckGo-lite scrape per
+team, which extracts the most plausible points value (a number in the real
+FIFA range, nearest a "points"/"FIFA"/"ranking" cue). The CLI and hermes use
+the API by default; pass --no-official to force the scrape path.
 
 Like its siblings it NEVER changes the model silently: it prints proposed
 old -> new points (flagging large jumps) and only writes when you pass --write.
@@ -50,6 +52,65 @@ import fetch_h2h
 from fetch_h2h import TEAM_NAME, _fetch, _names, _strip_html
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+# --- Official FIFA API (primary source; CR5 §3) -------------------------------
+# inside.fifa.com serves the full men's ranking as JSON. It only accepts the
+# NUMERIC dateIds (the FRS_Male_Football_YYYYMMDD ids shown on the page return
+# an empty list). Known ids: id14933 = 19 Nov 2025, id14962 = 22 Dec 2025,
+# id15065 = 1 Apr 2026. New releases get a higher id with an irregular gap
+# (28-72 so far), so we probe forward from the last known id and keep the
+# newest non-empty response. One request returns ~211 teams — strictly better
+# than 48 per-team scrapes — so DuckDuckGo below is now the FALLBACK.
+OFFICIAL_API = ("https://inside.fifa.com/api/ranking-overview"
+                "?locale=en&dateId=id{n}&rankingType=football")
+LATEST_KNOWN_ID = 15065   # 2026-04-01 release (the data/ snapshot)
+PROBE_AHEAD = 120         # how far past LATEST_KNOWN_ID to look for new releases
+
+
+def _api_get(date_id: int, timeout: float = 15.0) -> list | None:
+    """One ranking-overview call; list of ranking rows, or None/[] on miss."""
+    import urllib.request
+    req = urllib.request.Request(
+        OFFICIAL_API.format(n=date_id), headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp).get("rankings") or None
+    except Exception:
+        return None
+
+
+def fetch_official_table(probe_ahead: int = PROBE_AHEAD) -> dict | None:
+    """Full {countryCode: points} from the newest official release found.
+
+    Probes ids forward from LATEST_KNOWN_ID (newer release = higher id) and
+    falls back to LATEST_KNOWN_ID itself. Returns None when the API is
+    unreachable, so run() can drop to the scrape path. Never raises.
+    """
+    best_id, best = None, None
+    rows = _api_get(LATEST_KNOWN_ID)
+    if rows:
+        best_id, best = LATEST_KNOWN_ID, rows
+    # Scan upward for a newer release; observed id gaps are 28-72, so a run of
+    # 80 consecutive empty ids means there is nothing newer — stop early.
+    misses = 0
+    for n in range(LATEST_KNOWN_ID + 1, LATEST_KNOWN_ID + probe_ahead + 1):
+        rows = _api_get(n)
+        if rows:
+            best_id, best = n, rows
+            misses = 0
+        else:
+            misses += 1
+            if misses >= 80:
+                break
+    if not best:
+        return None
+    pts = {}
+    for r in best:
+        item = r.get("rankingItem") or {}
+        code, val = item.get("countryCode"), item.get("totalPoints")
+        if code and val is not None:
+            pts[code] = float(val)
+    return {"date_id": best_id, "points": pts} if pts else None
 
 # Plausible FIFA Men's ranking-points window. The real spread runs from ~1100
 # (lowest-ranked WC teams) to ~1900 (the very top). Bounding the parser to this
@@ -125,28 +186,39 @@ def fetch_team(team_id: str, retries: int = 3) -> dict:
 
 
 def run(ds, team_ids, write: bool, min_delta: float = DEFAULT_MIN_DELTA,
-        polite: float = 0.6) -> dict:
+        polite: float = 0.6, use_official: bool = False) -> dict:
     """Propose (and optionally write) refreshed FIFA points for `team_ids`.
 
     Returns a JSON-able report. Writing reuses ds.set_team_rating per changed
     team, so power_rating is re-normalised and teams.csv persisted once per team
     (small, ≤48 rows). `min_delta` suppresses sub-noise changes.
+
+    `use_official=True` (the CLI/hermes default) pulls the whole table from the
+    official FIFA API in one shot; per-team scraping only covers teams the API
+    response somehow lacks. The library default stays False so existing callers
+    and the hermetic tests keep the pure-scrape behaviour.
     """
     from src import datameta
 
+    official = fetch_official_table() if use_official else None
+    source = f"inside.fifa.com api id{official['date_id']}" if official else "duckduckgo"
+
     proposals, results = [], []
     for t in team_ids:
-        res = fetch_team(t)
+        if official and t in official["points"]:
+            res = {"team": t, "ok": True, "points": official["points"][t]}
+        else:
+            res = fetch_team(t)
+            time.sleep(polite)
         results.append(res)
         new = res["points"]
         old = float(ds.team_rating(t))
         if new is not None and abs(new - old) >= min_delta:
             proposals.append({"team": t, "old": round(old, 1),
                               "new": round(new, 1), "delta": round(new - old, 1)})
-        time.sleep(polite)
 
     out = {
-        "source": "duckduckgo",
+        "source": source,
         "teams_checked": len(team_ids),
         "teams_fetched_ok": sum(1 for r in results if r.get("ok")),
         "proposals": sorted(proposals, key=lambda p: abs(p["delta"]), reverse=True),
@@ -157,7 +229,7 @@ def run(ds, team_ids, write: bool, min_delta: float = DEFAULT_MIN_DELTA,
             ds.set_team_rating(p["team"], p["new"])
         out["written"] = len(proposals)
         out["written_to"] = os.path.join(DATA, "teams.csv")
-        datameta.stamp(DATA, "fifa_points", "duckduckgo", len(proposals))
+        datameta.stamp(DATA, "fifa_points", source, len(proposals))
     return out
 
 
@@ -174,11 +246,14 @@ if __name__ == "__main__":
     p.add_argument("--write", action="store_true",
                    help="write verified values into data/teams.csv")
     p.add_argument("--json", action="store_true", help="raw JSON output")
+    p.add_argument("--no-official", action="store_true",
+                   help="skip the official FIFA API and use the web scrape only")
     args = p.parse_args()
 
     ds = DataStore.load(DATA)
     teams = [args.team] if args.team else list(ds.teams.team_id)
-    result = run(ds, teams, args.write, args.min_delta)
+    result = run(ds, teams, args.write, args.min_delta,
+                 use_official=not args.no_official)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
