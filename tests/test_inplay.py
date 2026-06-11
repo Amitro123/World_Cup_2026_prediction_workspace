@@ -51,10 +51,11 @@ def test_in_play_red_shifts_probabilities():
 
 
 def test_in_play_red_noop_at_full_time():
-    """With no time remaining, a red card cannot change a settled result."""
+    """Past the stoppage-time buffer, a red card cannot change a settled result."""
     m = engine.ProbabilityModel()
-    base = m.in_play(1600, 1600, 90, 2, 0)
-    red = m.in_play(1600, 1600, 90, 2, 0, red_home=1)
+    past_stoppage = 90 + engine.STOPPAGE_MIN
+    base = m.in_play(1600, 1600, past_stoppage, 2, 0)
+    red = m.in_play(1600, 1600, past_stoppage, 2, 0, red_home=1)
     for k in ("p_home", "p_draw", "p_away"):
         assert abs(base[k] - red[k]) < 1e-12
 

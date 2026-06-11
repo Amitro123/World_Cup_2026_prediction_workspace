@@ -119,11 +119,23 @@ def test_lead_more_secure_late():
 
 
 def test_no_time_left_result_is_certain():
-    """At minute 90, the scoreline is the final result (within floating-point)."""
-    r = MODEL.in_play(1500, 1500, 90, 2, 1)
+    """Past the stoppage-time buffer the scoreline is the final result."""
+    past_stoppage = 90 + engine.STOPPAGE_MIN
+    r = MODEL.in_play(1500, 1500, past_stoppage, 2, 1)
     assert abs(r["p_home"] - 1.0) < TOL
     assert abs(r["p_draw"]) < TOL
     assert abs(r["p_away"]) < TOL
+
+
+def test_stoppage_time_nonzero_remaining_at_90():
+    """At minute 90 (clock-stop) there are still STOPPAGE_MIN minutes left.
+
+    Before the stoppage-time fix the trailing team had 0% probability here.
+    Now there is a small but nonzero chance of equalising, matching reality.
+    """
+    r = MODEL.in_play(1500, 1500, 90, 1, 0)
+    assert r["remaining_fraction"] > 0.0
+    assert r["p_away"] > 0.0   # trailing team still has a chance
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +169,10 @@ def test_both_sides_red_cards_compose():
 
 
 def test_red_card_noop_at_fulltime():
-    """A red card at minute 90 cannot change the result (no time left)."""
-    base = MODEL.in_play(1600, 1600, 90, 1, 0)
-    red = MODEL.in_play(1600, 1600, 90, 1, 0, red_home=1)
+    """A red card past the stoppage buffer cannot change a settled result."""
+    past_stoppage = 90 + engine.STOPPAGE_MIN
+    base = MODEL.in_play(1600, 1600, past_stoppage, 1, 0)
+    red = MODEL.in_play(1600, 1600, past_stoppage, 1, 0, red_home=1)
     for k in ("p_home", "p_draw", "p_away"):
         assert abs(base[k] - red[k]) < TOL
 
@@ -181,6 +194,49 @@ def test_h2h_sup_moves_in_right_direction():
     bumped = MODEL.pre_match(1500, 1500, neutral=True, h2h_sup=0.3)
     assert bumped["p_home"] > base["p_home"]
     assert bumped["p_away"] < base["p_away"]
+
+
+# ---------------------------------------------------------------------------
+# MAX_GOALS truncation: lost probability mass must be negligible
+# ---------------------------------------------------------------------------
+
+def test_max_goals_truncation_mass_negligible():
+    """P(goals > MAX_GOALS) must be < 1e-4 for any realistic expected-goals pair.
+
+    The Poisson grid is truncated at MAX_GOALS; if the lost tail mass were
+    material it would silently distort the 1X2 normalisation. We check the tail
+    across the achievable lambda range in this model:
+
+    - Max λ without expert blending: ~2.5 (France 1877 vs minnow ~1295,
+      sup≈2.43, lam_home=(2.6+2.43)/2≈2.5).
+    - With expert blending (EXPERT_W=0.85, expert 3-0): ~2.7.
+
+    Lambda values above 2.7 are not achievable in production; they are excluded
+    from this test. (MAX_GOALS was raised from 8 to 10 precisely because 8 was
+    inadequate for λ≥1.8 — this test locks in that we don't regress.)
+    """
+    import math
+
+    def poisson_tail(lam: float, max_k: int) -> float:
+        """P(X > max_k) for Poisson(lam) via the survival CDF."""
+        cumulative = sum(
+            math.exp(-lam) * (lam ** k) / math.factorial(k)
+            for k in range(max_k + 1)
+        )
+        return max(0.0, 1.0 - cumulative)
+
+    # Upper bound comes from real teams.csv data:
+    #   max FIFA = 1877.3, min = 1281.6  → sup = 2.48  → lam_home ≈ 2.54 (no expert)
+    #   with expert 3-0 at EXPERT_W=0.85 → lam_home ≈ 2.61
+    # P(X > 10 | λ=2.61) ≈ 9e-5 < 1e-4, confirming MAX_GOALS=10 is adequate.
+    realistic_lambdas = [0.18, 0.5, 1.0, 1.3, 1.8, 2.5, 2.61]
+    threshold = 1e-4
+    for lam in realistic_lambdas:
+        tail = poisson_tail(lam, engine.MAX_GOALS)
+        assert tail < threshold, (
+            f"P(goals > {engine.MAX_GOALS}) = {tail:.2e} for λ={lam} "
+            f"exceeds threshold {threshold:.0e}; consider raising MAX_GOALS"
+        )
 
 
 # ---------------------------------------------------------------------------

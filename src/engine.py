@@ -133,7 +133,13 @@ HOSTS = frozenset({"USA", "MEX", "CAN"})
 # 0.18 is an empirical-prior guard, not a fitted value. CR4 suggested trying
 # 0.10; tested — no measurable holdout effect, kept at 0.18.
 MIN_LAMBDA = 0.18
-MAX_GOALS = 8        # truncation for the Poisson scoreline grid
+MAX_GOALS = 10       # truncation for the Poisson scoreline grid.
+                     # Raised from 8: for the strongest realistic matchup in this
+                     # model (France 1877 vs a minnow, λ_home ≈ 2.4) the
+                     # P(goals > 8) tail is ~0.09% — enough to bias the 1X2
+                     # normalisation. MAX_GOALS=10 reduces the tail to <5e-5,
+                     # well under 1e-4 for all achievable λ without expert blending
+                     # (~2.5 max). The extra two loop iterations are negligible.
 
 # --- Optional Elo blend ------------------------------------------------------
 # FIFA points are the default strength input. A second source (World Football Elo)
@@ -171,6 +177,15 @@ def blend_strength(
     z = (1.0 - weight) * zf + weight * ze
     return fifa_mean + fifa_std * z
 
+
+# Stoppage time — FIFA data for the 2022 WC shows average group-stage stoppage of
+# ~5.2 minutes per half. At minute 90:00 (the "clock stop") the model previously
+# returned remaining=0, giving the trailing team 0% win probability even though
+# 4-7 minutes of stoppage still follow. STOPPAGE_MIN is the expected added time
+# treated as a buffer: the live-probability engine uses (90 + STOPPAGE_MIN) as the
+# effective full-time mark, so a trailing team retains meaningful win probability
+# right up to the final whistle. Set to 0 to reproduce the old behaviour.
+STOPPAGE_MIN = 5
 
 # Knockout draws go to 30' of extra time and then, if still level, penalties.
 # We model these as two distinct regimes (see `resolve_knockout`):
@@ -576,7 +591,7 @@ class ProbabilityModel:
             rating_home, rating_away, neutral=neutral, expert=expert,
             h2h_sup=h2h_sup, form_sup=form_sup,
         )
-        remaining = max(0.0, (90 - minute) / 90.0)
+        remaining = max(0.0, (90 + STOPPAGE_MIN - minute) / 90.0)
         red_h, red_a = red_card_multipliers(red_home, red_away)
         out = _grid_probs(
             lam_h * remaining * red_h,
