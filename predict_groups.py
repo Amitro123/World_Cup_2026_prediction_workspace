@@ -6,14 +6,14 @@ news_adjustments pipeline is empty, so this is the only way they reach the sim).
 Outputs, per group: P(rank 1..4) per team, the modal full ordering, and the
 per-slot best assignment (max expected correct slots over all 24 permutations).
 """
+import random
 import sys
 from itertools import permutations
-import random
+
+from src import knockout
+from src.models import DataStore
 
 sys.stdout.reconfigure(encoding="utf-8")
-
-from src.models import DataStore
-from src import knockout
 
 # June 2026 injury deltas (ESPN/AP/BBC/MARCA) — same values as sim_r32_news.py
 NEWS = {

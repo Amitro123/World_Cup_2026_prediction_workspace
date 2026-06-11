@@ -1,13 +1,20 @@
 """News-adjusted R32 bracket simulation."""
-import sys, random
-sys.stdout.reconfigure(encoding='utf-8')
+import random
+import sys
+
 import pandas as pd
+
 from src import engine
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 teams = pd.read_csv('data/teams.csv')
 base = dict(zip(teams.team_id, teams.fifa_points))
 names = dict(zip(teams.team_id, teams.name_en))
-nm = lambda t: names.get(t, t)
+
+
+def nm(t):
+    return names.get(t, t)
 
 # News-based injury deltas — Source: ESPN/AP/BBC/MARCA June 2026
 news = {
@@ -122,7 +129,9 @@ for a, b in R32:
     diff = (p - p_raw) * 100
 
     verdict = nm(a) if p >= 0.5 else nm(b)
-    conf = 'STRONG' if abs(p - 0.5) > 0.20 else ('CLEAR' if abs(p - 0.5) > 0.10 else ('SLIGHT' if abs(p - 0.5) > 0.04 else 'TOSS-UP'))
+    conf = ('STRONG' if abs(p - 0.5) > 0.20 else
+            'CLEAR' if abs(p - 0.5) > 0.10 else
+            'SLIGHT' if abs(p - 0.5) > 0.04 else 'TOSS-UP')
 
     chg_str = ''
     if abs(diff) > 1.0:
@@ -134,8 +143,10 @@ for a, b in R32:
     na = injury_notes.get(a, '')
     nb = injury_notes.get(b, '')
     if da != 0 or db != 0:
-        if da != 0: print(f'    [!] {nm(a)}: {na}')
-        if db != 0: print(f'    [!] {nm(b)}: {nb}')
+        if da != 0:
+            print(f'    [!] {nm(a)}: {na}')
+        if db != 0:
+            print(f'    [!] {nm(b)}: {nb}')
     print()
 
 print('=' * 70)

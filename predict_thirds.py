@@ -5,13 +5,13 @@ in-memory like predict_groups.py. Reports per group letter:
   - P(this group's third qualifies)            [letter-level pick]
   - P(the user's named team is the qualifying third of this group)
 """
-import sys
 import random
+import sys
+
+from src import knockout
+from src.models import DataStore
 
 sys.stdout.reconfigure(encoding="utf-8")
-
-from src.models import DataStore
-from src import knockout
 
 NEWS = {
     'NED': -80, 'BRA': -100, 'MAR': -55, 'JPN': -45, 'GER': -20,

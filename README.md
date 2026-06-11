@@ -57,6 +57,7 @@ WorldCup2026/
 │   ├── form.csv              # recent-form / momentum per team (affects the model)
 │   ├── news_adjustments.csv  # Hermes pre-match updates (injuries / line moves)
 │   ├── market_odds.csv       # bookmaker 1X2 odds (anchor; dormant until filled)
+│   ├── app_odds.csv          # GOLAZO prediction-game odds (frozen per-match payouts)
 │   ├── players_market.csv    # bookmaker scorer/assist props (dormant; no free feed)
 │   ├── cowork_model.json     # FIFA points + base ratings from a prior session
 │   └── cowork_expert.json    # raw expert scorelines from a prior session
@@ -80,6 +81,12 @@ WorldCup2026/
 ├── fetch_player_props.py     # (dormant) parses player-prop payloads -> players_market.csv
 ├── build_data.py             # builds fifa_points, expert_scores.csv, model_probs.csv, predictions
 ├── build_excel.py            # builds the Excel template
+├── predict_groups.py         # group-standings MC: P(rank 1-4) per team, modal order
+├── predict_thirds.py         # best-thirds MC: P(each group's 3rd qualifies)
+├── predict_bracket.py        # knockout MC on a user-supplied R32 bracket
+├── predict_topscorer.py      # golden-boot MC (multinomial goal allocation)
+├── predict_value.py          # EV of every pick vs the GOLAZO app's frozen odds
+├── sim_r32_news.py           # one-off news-adjusted R32 scan (June 2026 injuries)
 └── requirements.txt
 ```
 
@@ -236,6 +243,7 @@ flags the numerical disadvantage. Red counts persist to `matches.csv`
 | `minute` | int | Current minute (live) |
 | `home_goals` / `away_goals` | int | Current/final score (blank if unplayed) |
 | `doc_pred_home` / `doc_pred_away` | int | Research scoreline |
+| `red_home` / `red_away` | int | Red cards per side (written by `update_match_state`) |
 
 ### `model_probs.csv`
 | Column | Type | Description |
@@ -438,7 +446,9 @@ history** and **recent form**.
    Dixon-Coles correction is a full-match calibration).
 
 **Assumptions (documented so you can challenge them):**
-- 90 minutes of regular time; stoppage time ignored.
+- 90 minutes of regular time **plus expected stoppage** (`STOPPAGE_MIN = 5`):
+  the live engine treats 90+5' as the effective full-time mark, so a trailing
+  team keeps a small, realistic win probability at minute 90 instead of a hard 0%.
 - **Home advantage applies only to host nations.** 2026 is co-hosted by the
   **USA, Mexico and Canada** (`engine.HOSTS`), so every match is on neutral soil
   for the visiting team *except* when a host plays at home — there a real
@@ -843,6 +853,32 @@ python fetch_odds.py --sport soccer_fifa_world_cup
 With no key the anchor simply stays dormant — `market_odds.csv` ships header-only
 and nothing else depends on it. You can also hand-enter decimals into the CSV.
 
+### Prediction-game toolkit (`predict_*.py`) — GOLAZO league
+
+Standalone scripts for playing a [GOLAZO](https://golazo.me) prediction league
+with the model. All apply the June-2026 injury deltas **in-memory** (they do not
+touch `teams.csv`) and lock finished games from `matches.csv`:
+
+- `predict_groups.py` — per-group rank distribution + most-likely final order.
+- `predict_thirds.py` — P(each group's third qualifies among the best 8).
+- `predict_bracket.py` — win% through a user-entered R32 bracket (analytic +
+  Monte-Carlo reach probabilities per round).
+- `predict_topscorer.py` — golden-boot probabilities: team goals are simulated,
+  then allocated to players multinomially by `goal_share` (injured players excluded).
+- `predict_value.py` — the league meta-game: GOLAZO pays the **app's frozen
+  odds** for a correct 1X2 pick plus an exact-score bonus, so
+  `EV = P_blend × app_odds + P(score) × bonus`, where `P_blend` averages the
+  injury-adjusted model with the de-vigged bookmaker line. Reads
+  `data/app_odds.csv` (schema below); positive `edge` = the app underprices a pick.
+
+#### `app_odds.csv`
+| Column | Type | Description |
+|--------|------|-------------|
+| `home_team` / `away_team` | str | Names as displayed in the app (aliases mapped in `predict_value.py`) |
+| `kickoff_date` | str | App display time (Asia/Jerusalem) |
+| `odds_home` / `odds_draw` / `odds_away` | float | The app's frozen decimal payouts |
+| `extra` | str | Free text (joker placement, stage tags) |
+
 ### Player props (`src/playerprops.py`) — dormant
 
 The same panel shows per-match **anytime scorer / assist** probabilities. The
@@ -947,7 +983,7 @@ python tests/test_fetch_player_props.py # player-prop payload parser (no network
 ```
 
 Each prints PASS/FAIL per check and asserts on failure. The whole suite also runs
-under `pytest` (`pytest tests/ -q` — currently **197 tests**) and is wired to
+under `pytest` (`pytest tests/ -q` — currently **210 tests**) and is wired to
 **GitHub Actions** (`.github/workflows/ci.yml`): every push and PR to `main` runs
 the full suite on Python 3.10 / 3.11 / 3.12, plus a backtest smoke-check and the
 leakage guard.

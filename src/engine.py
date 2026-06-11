@@ -26,7 +26,9 @@ Model summary
    Poisson (the Dixon-Coles correction is a full-match calibration).
 
 Assumptions (documented so you can challenge / replace them):
-- 90 minutes of regular time; stoppage time ignored.
+- 90 minutes of regular time plus STOPPAGE_MIN expected stoppage: the in-play
+  clock treats (90 + STOPPAGE_MIN) as the effective full-time mark, so a
+  trailing team keeps a nonzero chance at minute 90.
 - Home advantage is a flat supremacy bump (HOME_SUP goals); neutral=True drops it
   for knockout games at neutral venues.
 - Swap the `ProbabilityModel` class to upgrade the engine; callers use only

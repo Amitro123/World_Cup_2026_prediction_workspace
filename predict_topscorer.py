@@ -5,14 +5,14 @@ Joint Monte-Carlo: group stage (all 72 games, same machinery as knockout.py)
 Each team's sampled goals are allocated to its players multinomially by
 goal_share (residual mass -> unnamed squad players). Injured players excluded.
 """
-import sys
 import random
+import sys
 from collections import defaultdict
 
-sys.stdout.reconfigure(encoding="utf-8")
-
-from src.models import DataStore
 from src import engine, knockout
+from src.models import DataStore
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 NEWS = {
     'NED': -80, 'BRA': -100, 'MAR': -55, 'JPN': -45, 'GER': -20,

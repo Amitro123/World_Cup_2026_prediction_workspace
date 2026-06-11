@@ -13,13 +13,14 @@ so the best joker spot is simply the highest-EV match.
 Usage: python predict_value.py [--days N]   (default: all priced matches)
 """
 import sys
-sys.stdout.reconfigure(encoding="utf-8")
 
 import pandas as pd
 
-from src.models import DataStore
 from src import engine
-from src.engine import _poisson_pmf, _dc_tau
+from src.engine import _dc_tau, _poisson_pmf
+from src.models import DataStore
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 NEWS = {
     'NED': -80, 'BRA': -100, 'MAR': -55, 'JPN': -45, 'GER': -20,

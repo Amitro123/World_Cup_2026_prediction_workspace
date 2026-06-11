@@ -6,13 +6,13 @@ h2h + form supremacy, and the half home edge for hosts (knockout.KNOCKOUT_HOST_A
 Outputs: per-tie win% (analytic, through ET + capped pens), chalk picks per round,
 and Monte-Carlo reach probabilities for every team.
 """
-import sys
 import random
+import sys
+
+from src import engine, knockout
+from src.models import DataStore
 
 sys.stdout.reconfigure(encoding="utf-8")
-
-from src.models import DataStore
-from src import engine, knockout
 
 NEWS = {
     'NED': -80, 'BRA': -100, 'MAR': -55, 'JPN': -45, 'GER': -20,
