@@ -31,6 +31,17 @@ Leakage guard: each holdout's rating as-of date is recorded in
 data/backtest_meta.json and enforced by `leakage_check()` (ratings_asof must be
 <= tournament_start). Run `python -m src.backtest --leakage` to verify; it is
 also embedded in the `--holdout` report and wired into CI.
+
+Calibration verdict (CR6 asked for isotonic/temperature scaling, 2026-06):
+tested temperature scaling p_i^(1/T)/Z on the pooled 294-match holdout. The
+in-sample optimum is T ~= 0.85-0.9 — i.e. the model is slightly UNDER-confident
+(the "Dixon-Coles is famously over-confident" critique would need T > 1; the
+data says the opposite) — but the in-sample gain is only -0.0017 log-loss, and
+in leave-one-tournament-out CV it disappears entirely (calibrated 0.9737 vs raw
+0.9730: net WORSE; helps 3 tournaments, hurts 2). Same call as the Elo blend and
+the logratio supremacy: no calibration layer until the CV gain is robust.
+Isotonic needs far more than 294 matches to beat a one-parameter family that
+already failed CV. Re-run this experiment if the holdout grows materially.
 """
 
 from __future__ import annotations
