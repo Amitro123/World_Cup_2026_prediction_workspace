@@ -115,7 +115,20 @@ SUP_ALPHA = FIFA_MEAN / K  # 1500/240 = 6.25 (slope-match); fitted optimum ≈7.
 # draw-inflation correction at half the club value without measurable cost.
 # Re-fit only when more holdout tournaments are added.
 DC_RHO = -0.06       # Dixon-Coles low-score dependence (see note above)
-HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`)
+HOME_SUP = 0.35      # home advantage, in goals of supremacy (added to `sup`).
+                     # Empirically validated (2026-06, CR6 §2): pooled over the
+                     # 54 host-nation matches of WC 1990-2022 with opponent
+                     # strength controlled via leakage-free Elo snapshots
+                     # (elo.snapshot_before each tournament), hosts overperform
+                     # their neutral-venue expectation by +0.133 expected-score
+                     # pts/match (8 of 10 host campaigns positive; Brazil 2014
+                     # and Qatar 2022 the exceptions) ~= +0.48 goals of
+                     # supremacy, SE ~0.06 pts. 0.35 sits inside the 95% CI —
+                     # slightly conservative, which is right for n=54. NB the
+                     # naive version of this study (host supremacy vs their own
+                     # nearby competitive matches, no opponent control) gives
+                     # -0.19 goals — qualifier opposition inflates the baseline;
+                     # don't "re-derive" this constant without Elo control.
 EXPERT_W = 0.85      # weight on the model vs an expert scoreline target; 0.55
                      # over-weighted the expert and pulled the model away from
                      # the market — 0.85 (15% expert) best matches market 1X2
