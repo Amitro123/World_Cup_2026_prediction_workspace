@@ -1,6 +1,6 @@
 match_id,group_id,stage,home_id,away_id,kickoff,venue,status,minute,home_goals,away_goals,doc_pred_home,doc_pred_away,red_home,red_away
 A1,A,group,MEX,RSA,2026-06-11 22:00,Mexico City,finished,96,2.0,0.0,3,1,1.0,2.0
-A2,A,group,KOR,CZE,2026-06-12 05:00,,scheduled,0,,,1,1,,
+A2,A,group,KOR,CZE,2026-06-12 05:00,,finished,95,2.0,1.0,1,1,0.0,0.0
 A3,A,group,CZE,RSA,2026-06-18 19:00,,scheduled,0,,,2,0,,
 A4,A,group,MEX,KOR,2026-06-19 04:00,Monterrey,scheduled,0,,,2,1,,
 A5,A,group,MEX,CZE,2026-06-25 04:00,,scheduled,0,,,1,0,,
