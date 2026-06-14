@@ -6,12 +6,12 @@ A4,A,group,MEX,KOR,2026-06-19 04:00,Monterrey,scheduled,0,,,2,1,,
 A5,A,group,MEX,CZE,2026-06-25 04:00,,scheduled,0,,,1,0,,
 A6,A,group,RSA,KOR,2026-06-25 04:00,,scheduled,0,,,0,2,,
 B1,B,group,CAN,BIH,2026-06-12 22:00,Toronto,finished,95,1.0,1.0,2,1,0.0,0.0
-B2,B,group,QAT,SUI,2026-06-13 22:00,,scheduled,0,,,0,3,,
+B2,B,group,QAT,SUI,2026-06-13 22:00,,finished,95,1.0,1.0,0,3,0.0,0.0
 B3,B,group,SUI,BIH,2026-06-18 22:00,,scheduled,0,,,1,0,,
 B4,B,group,CAN,QAT,2026-06-19 01:00,Vancouver,scheduled,0,,,4,0,,
 B5,B,group,CAN,SUI,2026-06-24 22:00,,scheduled,0,,,1,1,,
 B6,B,group,BIH,QAT,2026-06-24 22:00,,scheduled,0,,,2,0,,
-C1,C,group,BRA,MAR,2026-06-14 01:00,,scheduled,0,,,0,0,,
+C1,C,group,BRA,MAR,2026-06-14 01:00,,finished,95,1.0,1.0,0,0,0.0,0.0
 C2,C,group,HAI,SCO,2026-06-14 04:00,,scheduled,0,,,0,3,,
 C3,C,group,MAR,HAI,2026-06-25 01:00,Atlanta,scheduled,0,,,3,0,,
 C4,C,group,BRA,SCO,2026-06-25 01:00,Miami,scheduled,0,,,2,0,,
