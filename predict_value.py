@@ -50,6 +50,15 @@ def bonus(i: int, j: int) -> float:
     return BONUS_OTHER
 
 
+def outcome_of(i: int, j: int) -> str:
+    return 'p_home' if i > j else ('p_draw' if i == j else 'p_away')
+
+
+def team_of(out_key: str, row) -> str:
+    return (row.home_team if out_key == 'p_home'
+            else row.away_team if out_key == 'p_away' else 'DRAW')
+
+
 def main() -> None:
     ds = DataStore.load('data')
     names = dict(zip(ds.teams.team_id, ds.teams.name_en))
@@ -100,37 +109,70 @@ def main() -> None:
         odds = {'p_home': float(r.odds_home), 'p_draw': float(r.odds_draw),
                 'p_away': float(r.odds_away)}
 
-        # best scoreline: outcome EV + exact bonus EV over the DC grid
+        # DC scoreline grid
         grid = {}
         for i in range(7):
             for j in range(7):
                 grid[(i, j)] = _poisson_pmf(i, lh) * _poisson_pmf(j, la) * _dc_tau(i, j, lh, la)
         tot = sum(grid.values())
-        best_s, best_ev, best_out_ev = None, -1.0, 0.0
+
+        # --- field-share proxy + leverage -----------------------------------
+        # In a large pool ~everyone backs the favourite, so the points from a
+        # chalk pick give little RANK advantage. crowd(outcome) ~ the de-vigged
+        # implied prob from the app's own odds (short odds => crowded). The
+        # leverage score down-weights crowded outcomes: it rewards a contrarian
+        # pick that, when it lands, leapfrogs the field. This is the same logic
+        # we apply to jokers, now applied to the pick itself (CR: the Spain 0-0
+        # miss — a +EV, high-leverage draw we under-weighted by chasing raw EV).
+        inv = {k: 1.0 / odds[k] for k in odds}
+        s_inv = sum(inv.values())
+        crowd = {k: inv[k] / s_inv for k in inv}
+        dir_ev = {k: blend[k] * odds[k] for k in odds}
+        leverage = {k: dir_ev[k] * (1.0 - crowd[k]) for k in odds}
+
+        def modal_score(target):
+            return max((s for s in grid if outcome_of(*s) == target), key=grid.get)
+
+        # EV-optimal scoreline (direction odds + exact bonus)
+        best_s, best_ev = None, -1.0
         for (i, j), pr in grid.items():
-            out = 'p_home' if i > j else ('p_draw' if i == j else 'p_away')
+            out = outcome_of(i, j)
             ev = blend[out] * odds[out] + (pr / tot) * bonus(i, j)
             if ev > best_ev:
-                best_s, best_ev, best_out_ev = (i, j), ev, blend[out] * odds[out]
-        out_key = ('p_home' if best_s[0] > best_s[1]
-                   else 'p_draw' if best_s[0] == best_s[1] else 'p_away')
-        pick_team = (r.home_team if out_key == 'p_home'
-                     else r.away_team if out_key == 'p_away' else 'DRAW')
+                best_s, best_ev = (i, j), ev
+        ev_out = outcome_of(*best_s)
+
+        # leverage-optimal direction (rank play), with its modal scoreline
+        lev_out = max(leverage, key=leverage.get)
+        lev_s = modal_score(lev_out)
+        fav_out = min(odds, key=odds.get)
         rows.append({
             'date': r.kickoff_date, 'match': f"{r.home_team}-{r.away_team}",
-            'pick': pick_team, 'score': f"{best_s[0]}-{best_s[1]}",
-            'P_blend': blend[out_key], 'app_odds': odds[out_key],
-            'EV': best_ev, 'outcome_EV': best_out_ev,
-            'edge': blend[out_key] * odds[out_key] - 1.0,
+            'ev_pick': team_of(ev_out, r), 'ev_score': f"{best_s[0]}-{best_s[1]}",
+            'EV': best_ev,
+            'lev_pick': team_of(lev_out, r), 'lev_score': f"{lev_s[0]}-{lev_s[1]}",
+            'lev': leverage[lev_out],
+            'edge': blend[ev_out] * odds[ev_out] - 1.0,
+            # chalk trap: heavy favourite (odds<=1.20) where EV says take the
+            # crowd; the leverage pick diverging is the flag to consider it.
+            'trap': odds[fav_out] <= 1.20 and ev_out == fav_out and lev_out != ev_out,
         })
 
     df = pd.DataFrame(rows)
-    pd.set_option('display.width', 200)
-    print("ALL PRICED MATCHES — ranked by total EV (best joker spots on top)")
-    print(df.sort_values('EV', ascending=False).to_string(index=False,
-          formatters={'P_blend': '{:.0%}'.format, 'EV': '{:.2f}'.format,
-                      'outcome_EV': '{:.2f}'.format, 'edge': '{:+.0%}'.format}))
-    print("\nedge = P_blend x app_odds - 1  (positive = the app underprices this pick)")
+    pd.set_option('display.width', 220)
+    fmt = {'EV': '{:.2f}'.format, 'lev': '{:.2f}'.format, 'edge': '{:+.0%}'.format}
+    print("=== EV VIEW — single-entry optimal (best joker spots on top) ===")
+    print(df.sort_values('EV', ascending=False).to_string(index=False, formatters=fmt))
+    print("\n=== LEVERAGE VIEW — rank-optimal contrarian picks in a big field ===")
+    lv = df[['date', 'match', 'lev_pick', 'lev_score', 'lev', 'ev_pick', 'trap']]
+    print(lv.sort_values('lev', ascending=False).to_string(index=False, formatters=fmt))
+    traps = df[df['trap']]
+    if not traps.empty:
+        print("\n⚠️  CHALK TRAPS (heavy favourite, low rank value — weigh the leverage pick):")
+        for _, t in traps.iterrows():
+            print(f"   {t['match']}: EV says {t['ev_pick']} {t['ev_score']}, "
+                  f"but leverage says {t['lev_pick']} {t['lev_score']} (lev {t['lev']:.2f})")
+    print("\nedge = P_blend x app_odds - 1  |  lev = dir_EV x (1 - crowd_share)")
 
 
 if __name__ == '__main__':
