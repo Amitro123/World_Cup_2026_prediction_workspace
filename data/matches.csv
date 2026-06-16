@@ -47,7 +47,7 @@ H3,H,group,URU,CPV,2026-06-22 01:00,,scheduled,0,,,3,0,,
 H4,H,group,ESP,KSA,2026-06-21 19:00,Atlanta,scheduled,0,,,2,0,,
 H5,H,group,CPV,KSA,2026-06-27 03:00,,scheduled,0,,,1,1,,
 H6,H,group,URU,ESP,2026-06-27 03:00,Mexico City,scheduled,0,,,0,1,,
-I1,I,group,FRA,SEN,2026-06-16 22:00,New Jersey,scheduled,0,,,2,1,,
+I1,I,group,FRA,SEN,2026-06-16 22:00,New Jersey,finished,96,3.0,1.0,2,1,0.0,0.0
 I2,I,group,IRQ,NOR,2026-06-17 01:00,Massachusetts,scheduled,0,,,0,3,,
 I3,I,group,FRA,IRQ,2026-06-23 00:00,Philadelphia,scheduled,0,,,4,0,,
 I4,I,group,NOR,SEN,2026-06-23 03:00,New Jersey,scheduled,0,,,1,1,,
