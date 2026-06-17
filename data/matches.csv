@@ -65,7 +65,7 @@ K3,K,group,COL,COD,2026-06-24 05:00,Guadalajara,scheduled,0,,,3,1,,
 K4,K,group,POR,UZB,2026-06-23 20:00,Houston,scheduled,0,,,4,0,,
 K5,K,group,COD,UZB,2026-06-28 02:30,Atlanta,scheduled,0,,,1,1,,
 K6,K,group,COL,POR,2026-06-28 02:30,Miami,scheduled,0,,,1,1,,
-L1,L,group,ENG,CRO,2026-06-17 23:00,Arlington,scheduled,0,,,1,0,,
+L1,L,group,ENG,CRO,2026-06-17 23:00,Arlington,finished,96,4.0,2.0,1,0,0.0,0.0
 L2,L,group,PAN,CRO,2026-06-24 02:00,Foxborough,scheduled,0,,,0,2,,
 L3,L,group,ENG,GHA,2026-06-23 23:00,Foxborough,scheduled,0,,,2,0,,
 L4,L,group,CRO,GHA,2026-06-28 00:00,Philadelphia,scheduled,0,,,1,1,,
