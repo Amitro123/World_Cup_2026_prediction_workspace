@@ -48,13 +48,13 @@ H4,H,group,ESP,KSA,2026-06-21 19:00,Atlanta,scheduled,0,,,2,0,,
 H5,H,group,CPV,KSA,2026-06-27 03:00,,scheduled,0,,,1,1,,
 H6,H,group,URU,ESP,2026-06-27 03:00,Mexico City,scheduled,0,,,0,1,,
 I1,I,group,FRA,SEN,2026-06-16 22:00,New Jersey,finished,96,3.0,1.0,2,1,0.0,0.0
-I2,I,group,IRQ,NOR,2026-06-17 01:00,Massachusetts,scheduled,0,,,0,3,,
+I2,I,group,IRQ,NOR,2026-06-17 01:00,Massachusetts,finished,96,1.0,4.0,0,3,0.0,0.0
 I3,I,group,FRA,IRQ,2026-06-23 00:00,Philadelphia,scheduled,0,,,4,0,,
 I4,I,group,NOR,SEN,2026-06-23 03:00,New Jersey,scheduled,0,,,1,1,,
 I5,I,group,NOR,FRA,2026-06-26 22:00,Massachusetts,scheduled,0,,,1,2,,
 I6,I,group,SEN,IRQ,2026-06-26 22:00,Toronto,scheduled,0,,,2,0,,
-J1,J,group,ARG,ALG,2026-06-17 04:00,Kansas City,scheduled,0,,,2,0,,
-J2,J,group,AUT,JOR,2026-06-17 07:00,,scheduled,0,,,3,0,,
+J1,J,group,ARG,ALG,2026-06-17 04:00,Kansas City,finished,96,3.0,0.0,2,0,0.0,0.0
+J2,J,group,AUT,JOR,2026-06-17 07:00,,finished,96,3.0,1.0,3,0,0.0,0.0
 J3,J,group,ARG,AUT,2026-06-22 20:00,Texas,scheduled,0,,,2,1,,
 J4,J,group,JOR,ALG,2026-06-23 06:00,,scheduled,0,,,0,2,,
 J5,J,group,ALG,AUT,2026-06-28 05:00,Kansas City,scheduled,0,,,1,2,,
