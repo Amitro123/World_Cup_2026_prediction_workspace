@@ -59,7 +59,7 @@ J3,J,group,ARG,AUT,2026-06-22 20:00,Texas,scheduled,0,,,2,1,,
 J4,J,group,JOR,ALG,2026-06-23 06:00,,scheduled,0,,,0,2,,
 J5,J,group,ALG,AUT,2026-06-28 05:00,Kansas City,scheduled,0,,,1,2,,
 J6,J,group,JOR,ARG,2026-06-28 05:00,Texas,scheduled,0,,,0,4,,
-K1,K,group,POR,COD,2026-06-17 20:00,Houston,scheduled,0,,,3,0,,
+K1,K,group,POR,COD,2026-06-17 20:00,Houston,finished,96,1.0,1.0,3,0,0.0,0.0
 K2,K,group,UZB,COL,2026-06-18 05:00,Mexico City,scheduled,0,,,0,2,,
 K3,K,group,COL,COD,2026-06-24 05:00,Guadalajara,scheduled,0,,,3,1,,
 K4,K,group,POR,UZB,2026-06-23 20:00,Houston,scheduled,0,,,4,0,,
