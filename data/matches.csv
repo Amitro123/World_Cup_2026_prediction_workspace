@@ -15,12 +15,12 @@ C1,C,group,BRA,MAR,2026-06-14 01:00,,finished,96,1.0,1.0,0,0,0.0,0.0
 C2,C,group,HAI,SCO,2026-06-14 04:00,,finished,96,0.0,1.0,0,3,0.0,0.0
 C3,C,group,MAR,HAI,2026-06-25 01:00,Atlanta,scheduled,0,,,3,0,,
 C4,C,group,BRA,SCO,2026-06-25 01:00,Miami,scheduled,0,,,2,0,,
-C5,C,group,SCO,MAR,2026-06-20 01:00,,scheduled,0,,,0,1,,
-C6,C,group,BRA,HAI,2026-06-20 03:30,,scheduled,0,,,6,0,,
+C5,C,group,SCO,MAR,2026-06-20 01:00,,finished,96,0.0,1.0,0,1,0.0,0.0
+C6,C,group,BRA,HAI,2026-06-20 03:30,,finished,96,3.0,0.0,6,0,0.0,0.0
 D1,D,group,USA,PAR,2026-06-13 04:00,Los Angeles,finished,96,4.0,1.0,2,1,0.0,0.0
 D2,D,group,AUS,TUR,2026-06-14 07:00,,finished,96,2.0,0.0,0,2,0.0,0.0
-D3,D,group,TUR,PAR,2026-06-20 06:00,,scheduled,0,,,1,1,,
-D4,D,group,USA,AUS,2026-06-19 22:00,Seattle,scheduled,0,,,2,0,,
+D3,D,group,TUR,PAR,2026-06-20 06:00,,finished,96,0.0,1.0,1,1,0.0,0.0
+D4,D,group,USA,AUS,2026-06-19 22:00,Seattle,finished,96,2.0,0.0,2,0,0.0,0.0
 D5,D,group,PAR,AUS,2026-06-26 05:00,,scheduled,0,,,1,0,,
 D6,D,group,TUR,USA,2026-06-26 05:00,,scheduled,0,,,2,2,,
 E1,E,group,GER,CUW,2026-06-14 20:00,,finished,96,7.0,1.0,5,0,0.0,0.0
@@ -32,7 +32,7 @@ E6,E,group,ECU,GER,2026-06-25 23:00,,scheduled,0,,,1,1,,
 F1,F,group,NED,JPN,2026-06-14 23:00,Dallas,finished,96,2.0,2.0,2,1,0.0,0.0
 F2,F,group,SWE,TUN,2026-06-15 05:00,,finished,96,5.0,1.0,1,0,0.0,0.0
 F3,F,group,JPN,TUN,2026-06-21 07:00,,scheduled,0,,,2,0,,
-F4,F,group,NED,SWE,2026-06-20 20:00,,scheduled,0,,,2,0,,
+F4,F,group,NED,SWE,2026-06-20 20:00,,finished,96,5.0,1.0,2,0,0.0,0.0
 F5,F,group,SWE,JPN,2026-06-26 02:00,,scheduled,0,,,1,1,,
 F6,F,group,TUN,NED,2026-06-26 02:00,,scheduled,0,,,0,3,,
 G1,G,group,BEL,EGY,2026-06-15 22:00,Seattle,finished,96,1.0,1.0,2,0,0.0,0.0
