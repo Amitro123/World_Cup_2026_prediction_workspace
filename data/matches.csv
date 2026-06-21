@@ -38,7 +38,7 @@ F6,F,group,TUN,NED,2026-06-26 02:00,,scheduled,0,,,0,3,,
 G1,G,group,BEL,EGY,2026-06-15 22:00,Seattle,finished,96,1.0,1.0,2,0,0.0,0.0
 G2,G,group,IRN,NZL,2026-06-16 04:00,,finished,96,2.0,2.0,1,0,0.0,0.0
 G3,G,group,EGY,NZL,2026-06-22 04:00,,scheduled,0,,,2,0,,
-G4,G,group,BEL,IRN,2026-06-21 22:00,,finished,96,1.0,1.0,3,0,0.0,0.0
+G4,G,group,BEL,IRN,2026-06-21 22:00,,scheduled,0,,,3,0,0.0,0.0
 G5,G,group,IRN,EGY,2026-06-27 06:00,,scheduled,0,,,1,1,,
 G6,G,group,NZL,BEL,2026-06-27 06:00,,scheduled,0,,,0,4,,
 H1,H,group,ESP,CPV,2026-06-15 19:00,Atlanta,finished,96,0.0,0.0,4,0,0.0,0.0
