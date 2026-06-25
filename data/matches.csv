@@ -3,18 +3,18 @@ A1,A,group,MEX,RSA,2026-06-11 22:00,Mexico City,finished,96,2.0,0.0,3,1,1.0,2.0
 A2,A,group,KOR,CZE,2026-06-12 05:00,,finished,96,2.0,1.0,1,1,0.0,0.0
 A3,A,group,CZE,RSA,2026-06-18 19:00,,finished,96,1.0,1.0,2,0,0.0,0.0
 A4,A,group,MEX,KOR,2026-06-19 04:00,Monterrey,finished,96,1.0,0.0,2,1,0.0,0.0
-A5,A,group,MEX,CZE,2026-06-25 04:00,,scheduled,0,,,1,0,,
-A6,A,group,RSA,KOR,2026-06-25 04:00,,scheduled,0,,,0,2,,
+A5,A,group,MEX,CZE,2026-06-25 04:00,,finished,96,3.0,0.0,1,0,0.0,0.0
+A6,A,group,RSA,KOR,2026-06-25 04:00,,finished,96,1.0,0.0,0,2,0.0,0.0
 B1,B,group,CAN,BIH,2026-06-12 22:00,Toronto,finished,96,1.0,1.0,2,1,0.0,0.0
 B2,B,group,QAT,SUI,2026-06-13 22:00,,finished,96,1.0,1.0,0,3,0.0,0.0
 B3,B,group,SUI,BIH,2026-06-18 22:00,,finished,96,4.0,1.0,1,0,0.0,0.0
 B4,B,group,CAN,QAT,2026-06-19 01:00,Vancouver,finished,96,6.0,0.0,4,0,0.0,0.0
-B5,B,group,CAN,SUI,2026-06-24 22:00,,scheduled,0,,,1,1,,
-B6,B,group,BIH,QAT,2026-06-24 22:00,,scheduled,0,,,2,0,,
+B5,B,group,CAN,SUI,2026-06-24 22:00,,finished,96,1.0,2.0,1,1,0.0,0.0
+B6,B,group,BIH,QAT,2026-06-24 22:00,,finished,96,3.0,1.0,2,0,0.0,0.0
 C1,C,group,BRA,MAR,2026-06-14 01:00,,finished,96,1.0,1.0,0,0,0.0,0.0
 C2,C,group,HAI,SCO,2026-06-14 04:00,,finished,96,0.0,1.0,0,3,0.0,0.0
-C3,C,group,MAR,HAI,2026-06-25 01:00,Atlanta,scheduled,0,,,3,0,,
-C4,C,group,BRA,SCO,2026-06-25 01:00,Miami,scheduled,0,,,2,0,,
+C3,C,group,MAR,HAI,2026-06-25 01:00,Atlanta,finished,96,4.0,2.0,3,0,0.0,0.0
+C4,C,group,BRA,SCO,2026-06-25 01:00,Miami,finished,96,3.0,0.0,2,0,0.0,0.0
 C5,C,group,SCO,MAR,2026-06-20 01:00,,finished,96,0.0,1.0,0,1,0.0,0.0
 C6,C,group,BRA,HAI,2026-06-20 03:30,,finished,96,3.0,0.0,6,0,0.0,0.0
 D1,D,group,USA,PAR,2026-06-13 04:00,Los Angeles,finished,96,4.0,1.0,2,1,0.0,0.0
