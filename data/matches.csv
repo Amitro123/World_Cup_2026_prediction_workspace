@@ -57,17 +57,17 @@ J1,J,group,ARG,ALG,2026-06-17 04:00,Kansas City,finished,96,3.0,0.0,2,0,0.0,0.0
 J2,J,group,AUT,JOR,2026-06-17 07:00,,finished,96,3.0,1.0,3,0,0.0,0.0
 J3,J,group,ARG,AUT,2026-06-22 20:00,Texas,finished,96,2.0,0.0,2,1,0.0,0.0
 J4,J,group,JOR,ALG,2026-06-23 06:00,,finished,96,1.0,2.0,0,2,0.0,0.0
-J5,J,group,ALG,AUT,2026-06-28 05:00,Kansas City,scheduled,0,,,1,2,,
-J6,J,group,JOR,ARG,2026-06-28 05:00,Texas,scheduled,0,,,0,4,,
+J5,J,group,ALG,AUT,2026-06-28 05:00,Kansas City,finished,96,3.0,3.0,1,2,0.0,0.0
+J6,J,group,JOR,ARG,2026-06-28 05:00,Texas,finished,96,1.0,3.0,0,4,0.0,0.0
 K1,K,group,POR,COD,2026-06-17 20:00,Houston,finished,96,1.0,1.0,3,0,0.0,0.0
 K2,K,group,UZB,COL,2026-06-18 05:00,Mexico City,finished,96,1.0,3.0,0,2,0.0,0.0
 K3,K,group,COL,COD,2026-06-24 05:00,Guadalajara,finished,96,1.0,0.0,3,1,0.0,0.0
 K4,K,group,POR,UZB,2026-06-23 20:00,Houston,finished,96,5.0,0.0,4,0,0.0,0.0
-K5,K,group,COD,UZB,2026-06-28 02:30,Atlanta,scheduled,0,,,1,1,,
-K6,K,group,COL,POR,2026-06-28 02:30,Miami,scheduled,0,,,1,1,,
+K5,K,group,COD,UZB,2026-06-28 02:30,Atlanta,finished,96,3.0,1.0,1,1,0.0,0.0
+K6,K,group,COL,POR,2026-06-28 02:30,Miami,finished,96,0.0,0.0,1,1,0.0,0.0
 L1,L,group,ENG,CRO,2026-06-17 23:00,Arlington,finished,96,4.0,2.0,1,0,0.0,0.0
 L2,L,group,PAN,CRO,2026-06-24 02:00,Foxborough,finished,96,0.0,1.0,0,2,0.0,0.0
 L3,L,group,ENG,GHA,2026-06-23 23:00,Foxborough,finished,96,0.0,0.0,2,0,0.0,0.0
-L4,L,group,CRO,GHA,2026-06-28 00:00,Philadelphia,scheduled,0,,,1,1,,
-L5,L,group,PAN,ENG,2026-06-28 00:00,New Jersey,scheduled,0,,,0,4,,
+L4,L,group,CRO,GHA,2026-06-28 00:00,Philadelphia,finished,96,2.0,1.0,1,1,0.0,0.0
+L5,L,group,PAN,ENG,2026-06-28 00:00,New Jersey,finished,96,0.0,2.0,0,4,0.0,0.0
 L6,L,group,GHA,PAN,2026-06-18 02:00,,finished,96,1.0,1.0,2,1,0.0,0.0
