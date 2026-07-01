@@ -87,6 +87,8 @@ WorldCup2026/
 ├── predict_topscorer.py      # golden-boot MC (multinomial goal allocation)
 ├── predict_value.py          # EV of every pick vs the GOLAZO app's frozen odds
 ├── sim_r32_news.py           # one-off news-adjusted R32 scan (June 2026 injuries)
+├── scripts/
+│   └── pre_match_briefing.py # model numbers + proposed news adjustments for one fixture
 └── requirements.txt
 ```
 
@@ -245,6 +247,15 @@ flags the numerical disadvantage. Red counts persist to `matches.csv`
 | `doc_pred_home` / `doc_pred_away` | int | Research scoreline |
 | `red_home` / `red_away` | int | Red cards per side (written by `update_match_state`) |
 
+> **Only the group stage lives here.** Knockout ties (R32 onward) have no row
+> in `matches.csv` — they're resolved dynamically at simulation time from
+> `knockout.R32`/`TREE`. Each still gets a stable `match_id` for the
+> `news_adjustments.csv` interface below (`knockout.match_id_for(match_no)`,
+> e.g. `"M78"`), it's just never a `matches.csv` row. Keep `status` current:
+> a `scheduled` row whose `kickoff` has already passed silently makes
+> `knockout.run()` re-simulate an already-known result on every iteration
+> (see `docs/session-insights/2026-07-01-2230-session-insight.md`).
+
 ### `model_probs.csv`
 | Column | Type | Description |
 |--------|------|-------------|
@@ -342,6 +353,15 @@ ships dormant; the model props in `src/playerprops.py` display with or without i
 | `source` | str | Source URL/name |
 | `created_at` | str | ISO timestamp |
 | `active` | int | 1 = active, 0 = cleared |
+
+> **Knockout ties are supported too** via the stable `"M<match_no>"` ids from
+> `knockout.match_id_for` (e.g. `"M78"` for the R16 match at bracket position
+> 78) — no `matches.csv` row is required for these. Only `kind=rating_delta`
+> is currently wired into the knockout Monte-Carlo (`knockout.run` /
+> `knockout.simulate_detail`, via `DataStore.knockout_rating_deltas` and
+> `knockout.build_knockout_news`); `lambda_mult` on a knockout match_id is
+> accepted but has no effect yet. `scripts/pre_match_briefing.py` proposes
+> rows in this format without saving them automatically.
 
 ### JSON sources
 - **`cowork_model.json`** — FIFA points / base ratings imported from a prior
@@ -645,6 +665,24 @@ lowest common ancestor of their two paths up the tree).
 > `knockout.py` is a library module (no standalone CLI). Call `knockout.run` /
 > `knockout.simulate_detail` / `knockout.draw_difficulty` from Python, or use the
 > dashboard's simulation views.
+
+**News adjustments on a knockout tie** — every simulated match number
+(`ALL_MATCH_NOS`, i.e. M73–M102 + M104) has a stable id via
+`knockout.match_id_for(match_no)`. `DataStore.add_news_adjustment("M78", ...)`
+works exactly like it does for a group `match_id`; `knockout.run()` and
+`knockout.simulate_detail()` apply any active `rating_delta` to whichever team
+ends up occupying that bracket slot (precomputed once per run via
+`knockout.build_knockout_news`, same pattern as the `h2h`/`form` lookups — the
+Monte-Carlo hot loop still never touches pandas). Use
+`scripts/pre_match_briefing.py --match TEAM1 TEAM2` to look up (or resolve,
+for a settled R32 pairing) a fixture's match_id and propose adjustments before
+committing them.
+
+> `knockout.run()` always *simulates* every knockout tie from ratings, even
+> one the real tournament has already played — there is currently no
+> mechanism to lock in a real, already-decided knockout result the way
+> `_simulate_group_fast` does for a `finished` group game. See the Follow-up
+> Actions in `docs/session-insights/2026-07-01-2230-session-insight.md`.
 
 ---
 

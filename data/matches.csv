@@ -21,7 +21,7 @@ D1,D,group,USA,PAR,2026-06-13 04:00,Los Angeles,finished,96,4.0,1.0,2,1,0.0,0.0
 D2,D,group,AUS,TUR,2026-06-14 07:00,,finished,96,2.0,0.0,0,2,0.0,0.0
 D3,D,group,TUR,PAR,2026-06-20 06:00,,finished,96,0.0,1.0,1,1,0.0,0.0
 D4,D,group,USA,AUS,2026-06-19 22:00,Seattle,finished,96,2.0,0.0,2,0,0.0,0.0
-D5,D,group,PAR,AUS,2026-06-26 05:00,,scheduled,0,,,1,0,,
+D5,D,group,PAR,AUS,2026-06-26 05:00,,finished,96,0.0,0.0,1,0,,
 D6,D,group,TUR,USA,2026-06-26 05:00,,finished,96,3.0,2.0,2,2,0.0,0.0
 E1,E,group,GER,CUW,2026-06-14 20:00,,finished,96,7.0,1.0,5,0,0.0,0.0
 E2,E,group,CIV,ECU,2026-06-15 02:00,Philadelphia,finished,96,1.0,0.0,1,1,0.0,0.0

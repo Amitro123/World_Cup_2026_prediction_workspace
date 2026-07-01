@@ -159,6 +159,86 @@ def test_draw_difficulty_shape():
         assert c["team_a"] in names and c["team_b"] in names
 
 
+# --- knockout news_adjustments interface (stable match_id, rating_delta) ----
+
+def _inject_news_row(ds, match_id, team_id, kind, value):
+    """Add a news row directly in memory, bypassing add_news_adjustment's disk
+    write so the test never touches the real data/news_adjustments.csv."""
+    import pandas as pd
+
+    from src.models import NEWS_COLUMNS
+
+    row = pd.DataFrame([{
+        "adj_id": "test", "match_id": match_id, "team_id": team_id,
+        "kind": kind, "value": value, "note_he": "test", "source": "unit-test",
+        "created_at": "", "active": 1,
+    }], columns=NEWS_COLUMNS)
+    ds.news = row if ds.news.empty else pd.concat([ds.news, row], ignore_index=True)
+
+
+def test_match_id_for_covers_every_simulated_match_no():
+    assert knockout.match_id_for(73) == "M73"
+    assert knockout.match_id_for(104) == "M104"
+    # every R32/TREE match number gets a ("M"-prefixed) stable id; M103 (the
+    # third-place play-off) is deliberately not simulated and so not included.
+    assert 103 not in knockout.ALL_MATCH_NOS
+    assert set(knockout.R32) <= set(knockout.ALL_MATCH_NOS)
+    assert set(knockout.TREE) <= set(knockout.ALL_MATCH_NOS)
+
+
+def _cleared_news(ds):
+    """ds with news wiped in memory -- shipped news_adjustments.csv now carries
+    real knockout entries (e.g. M82, from live pre-match briefings), so these
+    tests must not assume it's empty."""
+    from src.models import NEWS_COLUMNS
+    import pandas as pd
+
+    ds.news = pd.DataFrame(columns=NEWS_COLUMNS)
+    return ds
+
+
+def test_build_knockout_news_empty_by_default():
+    from src.models import DataStore
+
+    ds = _cleared_news(DataStore.load(os.path.join(os.path.dirname(__file__), "..", "data")))
+    assert knockout.build_knockout_news(ds) == {}
+
+
+def test_build_knockout_news_reads_rating_delta_by_match_id():
+    from src.models import DataStore
+
+    ds = _cleared_news(DataStore.load(os.path.join(os.path.dirname(__file__), "..", "data")))
+    _inject_news_row(ds, "M78", "BEL", "rating_delta", -40.0)
+    _inject_news_row(ds, "M78", "BEL", "rating_delta", -10.0)  # sums per team
+    _inject_news_row(ds, "M78", "SEN", "lambda_mult", 0.8)     # not wired -> ignored
+    kn = knockout.build_knockout_news(ds)
+    assert kn == {78: {"BEL": -50.0}}
+
+
+def test_knockout_rating_delta_shifts_run():
+    """A rating_delta news adjustment on a real R32 match_id must change the
+    affected team's reach-probability in knockout.run() — the concrete gap
+    reported in the 2026-07 session: knockout ties had no stable match_id for
+    news_adjustments.csv to attach to."""
+    from src.models import DataStore
+
+    ds = DataStore.load(os.path.join(os.path.dirname(__file__), "..", "data"))
+    ctx = knockout._prepare(ds)
+    pos, third_assign, _ = knockout._group_phase(ctx, random.Random(7))
+    r32 = knockout._resolve_r32(pos, third_assign)
+    match_no, (team_a, _team_b) = next(iter(r32.items()))
+    match_id = knockout.match_id_for(match_no)
+
+    baseline = knockout.run(ds, n=6000, seed=7).set_index("team_id")["r16_%"]
+
+    _inject_news_row(ds, match_id, team_a, "rating_delta", -300.0)
+    adjusted = knockout.run(ds, n=6000, seed=7).set_index("team_id")["r16_%"]
+
+    # A crippling delta on one side of an R32 tie must tank that team's odds
+    # of reaching the R16 by a wide margin -- well outside Monte-Carlo noise.
+    assert adjusted[team_a] < baseline[team_a] - 15.0
+
+
 if __name__ == "__main__":
     import traceback
 

@@ -1,3 +1,5 @@
 adj_id,match_id,team_id,kind,value,note_he,source,created_at,active
 6ea5b92b,A4,MEX,rating_delta,-40.0,Cesar Montes suspended (red vs RSA) - missing vs Korea,espn.com,2026-06-19T01:19:01,0
 0d4a54c0,C5,MAR,rating_delta,-55.0,Aguerd (CB) and Ezzalzouli (winger) withdrew from squad - out vs Scotland,sportsmole.co.uk,2026-06-19T21:24:08,1
+2349455e,M82,SEN,rating_delta,-20.0,השוער הראשון אדוארד מנדי נפצע בברך במשחק נגד נורווגיה ויוחלף על ידי מורי דיאו,https://www.goal.com/en-us/news/belgium-senegal-world-cup-preview/blt1c958015a91eebc7,2026-07-01T22:36:34,1
+ba12cc99,M82,BEL,rating_delta,-10.0,זנו דבאסט (בלם) עדיין ספק עם פציעת רגל; לא נכלל בהרכב הפותח המאושר,https://www.sportsmole.co.uk/football/belgium/world-cup-2026/predicted-lineups/is-debast-back-for-the-knockouts-predicted-belgium-xi-vs-senegal_600367.html,2026-07-01T22:36:34,1

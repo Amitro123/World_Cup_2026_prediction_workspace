@@ -590,6 +590,24 @@ class DataStore:
         n = self.news
         return n[(n.match_id == match_id) & (n.active.astype(str).isin(["1", "True", "true"]))]
 
+    def knockout_rating_deltas(self, match_id: str) -> dict[str, float]:
+        """team_id -> summed active `rating_delta` for a knockout match_id.
+
+        Knockout ties (R32 onward, see `src/knockout.py`) are built dynamically
+        at simulation time and have no static row in matches.csv, so unlike
+        `_adjusted_inputs` this never calls `self.match(match_id)` — it resolves
+        purely from `active_adjustments(match_id)` + the team_id column. Only
+        `rating_delta` is wired for knockout ties; `lambda_mult` on a knockout
+        match_id is accepted by `add_news_adjustment` but has no effect here yet.
+        """
+        out: dict[str, float] = {}
+        for a in self.active_adjustments(match_id).itertuples():
+            if str(a.kind) != "rating_delta":
+                continue
+            val = float(a.value) if pd.notna(a.value) and a.value != "" else 0.0
+            out[a.team_id] = out.get(a.team_id, 0.0) + val
+        return out
+
     def _adjusted_inputs(self, match_id: str, apply_news: bool = True):
         """Return (rating_home, rating_away, lambda_mult_home, lambda_mult_away, notes)
         after applying active news adjustments."""

@@ -111,6 +111,38 @@ DISPLAY_ROUNDS = [
     ("גמר", [104]),
 ]
 
+# --- Stable match_ids for knockout ties (news_adjustments interface) --------
+# Every simulated knockout tie gets a stable, predictable match_id — "M" + the
+# official FIFA match number already used as the R32/TREE dict keys above — so
+# a news_adjustments.csv row can target a specific knockout tie the same way it
+# targets a group-stage match_id. R32 ties (M73-M88) are known once the group
+# stage resolves; R16-onward ties are only known once earlier rounds are
+# simulated, so a rating_delta attached to e.g. "M97" applies to whichever team
+# ends up playing that match number in each simulated run — it is not pinned to
+# a specific pair of teams the way a group match_id is.
+ALL_MATCH_NOS = sorted(set(R32) | set(TREE))
+
+
+def match_id_for(match_no: int) -> str:
+    return f"M{match_no}"
+
+
+def build_knockout_news(ds) -> dict[int, dict[str, float]]:
+    """Active knockout rating_delta adjustments: match_no -> {team_id: delta}.
+
+    Precomputed once per run so the Monte-Carlo loop stays cheap (same pattern
+    as build_h2h/build_form). Absent unless `ds.add_news_adjustment` was called
+    with one of the match_ids from `match_id_for`.
+    """
+    out: dict[int, dict[str, float]] = {}
+    if getattr(ds, "news", None) is None or ds.news.empty:
+        return out
+    for m in ALL_MATCH_NOS:
+        deltas = ds.knockout_rating_deltas(match_id_for(m))
+        if deltas:
+            out[m] = deltas
+    return out
+
 
 def build_h2h(ds) -> dict[tuple, float]:
     """Pairwise head-to-head supremacy lookup: (home_id, away_id) -> goals.
@@ -195,7 +227,14 @@ def _prepare(ds) -> dict:
         "group_fixtures": group_fixtures,
         "h2h": build_h2h(ds),
         "form": build_form(ds),
+        "knockout_news": build_knockout_news(ds),
     }
+
+
+def _ko_rating(ctx, match_no, team_id) -> float:
+    """A team's rating for knockout match `match_no`, plus any active rating_delta."""
+    delta = ctx["knockout_news"].get(match_no, {}).get(team_id, 0.0)
+    return ctx["ratings"][team_id] + delta
 
 
 def simulate_group(ds, group_id, ratings, rng, h2h=None, form=None):
@@ -340,7 +379,7 @@ def simulate_once(ctx, rng, counts):
         h, a = r32[m]
         host_sup = KNOCKOUT_HOST_ADV if h in engine.HOSTS else 0.0
         w = h if engine.knockout_winner(
-            ratings[h], ratings[a], rng,
+            _ko_rating(ctx, m, h), _ko_rating(ctx, m, a), rng,
             h2h_sup=h2h.get((h, a), 0.0) + host_sup,
             form_sup=_form_sup(form, h, a),
         ) == 0 else a
@@ -351,7 +390,7 @@ def simulate_once(ctx, rng, counts):
         h, a = winners[fa], winners[fb]
         host_sup = KNOCKOUT_HOST_ADV if h in engine.HOSTS else 0.0
         w = h if engine.knockout_winner(
-            ratings[h], ratings[a], rng,
+            _ko_rating(ctx, m, h), _ko_rating(ctx, m, a), rng,
             h2h_sup=h2h.get((h, a), 0.0) + host_sup,
             form_sup=_form_sup(form, h, a),
         ) == 0 else a
@@ -394,7 +433,7 @@ def simulate_detail(ds, seed: int | None = None) -> dict:
                 fa, fb = TREE[m]
                 h, a = winners[fa], winners[fb]
             wi, hg, ag, note = _play_detail(
-                ratings[h], ratings[a], rng,
+                _ko_rating(ctx, m, h), _ko_rating(ctx, m, a), rng,
                 h2h_sup=h2h.get((h, a), 0.0), form_sup=_form_sup(form, h, a),
             )
             w = h if wi == 0 else a
